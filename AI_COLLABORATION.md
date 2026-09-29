@@ -149,6 +149,30 @@ PROJECT_SPEC.md 4-3에 반영했습니다(사례 근거는 API_RESEARCH.md 7장)
 - `./gradlew clean build`: 빌드 성공, 기본 테스트 1건 통과, 기동 로그에서 Spring Boot v3.5.16 확인
 - README에는 아직 반영하지 않았습니다(README 미작성).
 
+### 1-7. 회원·장바구니 테이블을 스키마 V1에 포함
+
+**문제 상황**
+2단계(데이터 기반)의 스키마 V1 범위를 정해야 했습니다. 회원가입·로그인·회원 장바구니 기능은 5단계에서 구현할 계획이었습니다.
+
+**AI Agent의 제안**
+V1에는 `region`, `product`, `store`, `price`만 넣고, `member`와 `cart_item`은 5단계의 V2 마이그레이션으로 미루자고 제안했습니다. "승인되지 않은 다음 단계의 테이블을 미리 만들지 않는다"는 이유였습니다.
+
+**개발자의 판단**
+`member`와 `cart_item`도 데이터 기반에 해당하므로, 데이터 기반을 한 번에 구축하기 위해 V1에 포함하기로 했습니다. 추가 조건은 다음과 같습니다.
+- 로그인 아이디 UNIQUE
+- 같은 회원의 같은 상품 중복 방지: UNIQUE(member_id, good_id)
+- 수량 1~99 제한
+- `cart_item`은 `member`와 `product`를 FK로 참조
+- 이번에는 테이블, Entity, Repository, 영속성 테스트까지만 구현하고, 회원가입·로그인·회원 장바구니 서비스 로직은 5단계에서 구현
+
+**구현 및 검증 결과**
+- `V1__create_initial_tables.sql`에 6개 테이블을 만들었습니다. `member`와 `cart_item`에는 위 제약을 적용했습니다.
+- `MemberCartPersistenceTest` 8개가 통과했습니다. 다음 경우가 PostgreSQL 제약 이름(`uk_member_username`, `uk_cart_item_member_product`, `cart_item_quantity_check`)으로 거부되는 것을 테스트 로그에서 확인했습니다.
+  - 로그인 아이디 중복
+  - 같은 회원·같은 상품 중복
+  - 수량 0과 100
+- 회원·장바구니 서비스 로직은 미구현입니다(5단계).
+
 ---
 
 ## 2. 실제 API 응답 검증
