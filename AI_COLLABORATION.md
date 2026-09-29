@@ -317,23 +317,7 @@ PROJECT_SPEC.md 4-2와 API_RESEARCH.md 6-3에 반영했습니다. 수집 코드�
 
 ## 3. 오류 분석 및 해결
 
-실제로 발생한 오류의 원인과 해결 과정을 기록합니다.
-
-### 3-1. 테스트 설정 빈 중복으로 인한 컨텍스트 로딩 실패 (3-2)
-
-**문제 상황**
-`ComparisonServiceTest` 첫 실행에서 18개 테스트가 모두 `Failed to load ApplicationContext`로 실패했습니다.
-
-**원인 분석 (AI Agent가 발견)**
-스택 트레이스의 근본 원인은 `NoUniqueBeanDefinitionException`이었습니다. `MartPickProperties` 타입의 빈이 2개 있었습니다.
-- `MartPickApplication`의 `@EnableConfigurationProperties`가 `application.yml`로 만드는 빈
-- 테스트 기준 조사일을 명시하려고 테스트의 `@TestConfiguration`에서 정의한 빈
-
-**해결 (AI Agent가 적용)**
-테스트 빈에 `@Primary`를 붙였습니다. 테스트가 설정 파일 값에 의존하지 않고 명시한 기준 조사일을 쓰도록 유지하기 위해서입니다. 개발자가 별도로 결정한 사항은 없습니다.
-
-**검증 결과** (테스트로 확인)
-수정 후 `ComparisonServiceTest` 18개를 포함해 전체 테스트가 통과했습니다.
+실제로 발생한 오류의 원인과 해결 과정을 기록합니다. 해당 사례는 아직 없습니다.
 
 ## 4. 테스트 기반 수정
 
