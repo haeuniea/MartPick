@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<response>
+  <result>
+    <iros.openapi.service.vo.entpInfoVO>
+      <entpId>786</entpId>
+      <entpName>이마트연수점</entpName>
+      <entpTypeCode>LM</entpTypeCode>
+      <entpAreaCode>020700000</entpAreaCode>
+      <areaDetailCode>020710000</areaDetailCode>
+      <entpTelno>032-820-1234</entpTelno>
+      <postNo>21975</postNo>
+      <plmkAddrBasic>인천광역시 연수구 동춘동  926-9 이마트</plmkAddrBasic>
+      <plmkAddrDetail>이마트 연수점</plmkAddrDetail>
+      <roadAddrBasic>인천광역시 연수구 경원대로 184</roadAddrBasic>
+      <roadAddrDetail>(동춘동)</roadAddrDetail>
+    </iros.openapi.service.vo.entpInfoVO>
+    <iros.openapi.service.vo.entpInfoVO>
+      <entpId>89</entpId>
+      <entpName>GS더프레시울산구영점</entpName>
+      <entpTypeCode>SM</entpTypeCode>
+      <entpAreaCode>020600000</entpAreaCode>
+      <areaDetailCode>020601000</areaDetailCode>
+      <entpTelno>052-700-2002</entpTelno>
+      <postNo>689852</postNo>
+      <plmkAddrBasic>울산 울주군 범서읍 구영리</plmkAddrBasic>
+      <plmkAddrDetail>849-1</plmkAddrDetail>
+      <xMapCoord>35.572771350711626</xMapCoord>
+      <yMapCoord>129.2370085932047</yMapCoord>
+    </iros.openapi.service.vo.entpInfoVO>
+    <iros.openapi.service.vo.entpInfoVO>
+      <entpId>5499990000</entpId>
+      <entpName>이마트포항점</entpName>
+      <entpTypeCode>LM</entpTypeCode>
+      <entpAreaCode>021100000</entpAreaCode>
+      <areaDetailCode>021123000</areaDetailCode>
+      <entpTelno>054-223-1234</entpTelno>
+      <plmkAddrBasic>경상북도 포항시 남구</plmkAddrBasic>
+      <plmkAddrDetail>인덕동 161-176</plmkAddrDetail>
+      <roadAddrBasic>경상북도 포항시 남구</roadAddrBasic>
+      <roadAddrDetail>냉천로 10 E마트</roadAddrDetail>
+    </iros.openapi.service.vo.entpInfoVO>
+  </result>
+  <resultCode>00</resultCode>
+  <resultMsg>ok</resultMsg>
+</response>

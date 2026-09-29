@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<response>
+  <result>
+    <iros.openapi.service.vo.stdInfoVO>
+      <code>020100000</code>
+      <codeName>서울특별시</codeName>
+      <highCode>020000000</highCode>
+    </iros.openapi.service.vo.stdInfoVO>
+    <iros.openapi.service.vo.stdInfoVO>
+      <code>020101000</code>
+      <codeName>도봉구</codeName>
+      <highCode>020100000</highCode>
+    </iros.openapi.service.vo.stdInfoVO>
+    <iros.openapi.service.vo.stdInfoVO>
+      <code>021800000</code>
+      <codeName>전남광주통합특별시</codeName>
+      <highCode>020000000</highCode>
+    </iros.openapi.service.vo.stdInfoVO>
+  </result>
+  <resultCode>00</resultCode>
+  <resultMsg>ok</resultMsg>
+</response>

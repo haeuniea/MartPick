@@ -12,3 +12,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+martpick:
+  public-data:
+    base-url: https://apis.data.go.kr/B551919/ProductPriceInfoService
+    service-key: ${DATA_GO_KR_SERVICE_KEY:}
+    connect-timeout: 5s
+    read-timeout: 30s

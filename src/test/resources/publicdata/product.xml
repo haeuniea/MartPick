@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<response>
+  <result>
+    <item>
+      <goodId>104</goodId>
+      <goodName>도브 센서티브 뷰티바(4개)</goodName>
+      <productEntpCode>466</productEntpCode>
+      <goodUnitDivCode>EA</goodUnitDivCode>
+      <goodBaseCnt>1</goodBaseCnt>
+      <goodSmlclsCode>030301006</goodSmlclsCode>
+      <detailMean>90g*4개</detailMean>
+      <goodTotalCnt>4</goodTotalCnt>
+      <goodTotalDivCode>EA</goodTotalDivCode>
+    </item>
+    <item>
+      <goodId>1000</goodId>
+      <goodName>팔도 왕뚜껑(110g)</goodName>
+      <productEntpCode>1819</productEntpCode>
+      <goodUnitDivCode>G</goodUnitDivCode>
+      <goodBaseCnt>100</goodBaseCnt>
+      <goodSmlclsCode>030201024</goodSmlclsCode>
+      <goodTotalCnt>110</goodTotalCnt>
+      <goodTotalDivCode>G</goodTotalDivCode>
+    </item>
+  </result>
+  <resultCode>00</resultCode>
+  <resultMsg>ok</resultMsg>
+</response>

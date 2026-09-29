@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<response>
+  <result>
+    <iros.openapi.service.vo.goodPriceVO>
+      <goodInspectDay>20260925</goodInspectDay>
+      <entpId>887</entpId>
+      <goodId>1000</goodId>
+      <goodPrice>1280</goodPrice>
+      <inputDttm>2026-09-23 12:00:10</inputDttm>
+    </iros.openapi.service.vo.goodPriceVO>
+    <iros.openapi.service.vo.goodPriceVO>
+      <goodInspectDay>20260925</goodInspectDay>
+      <entpId>89</entpId>
+      <goodId>1000</goodId>
+      <goodPrice>1150</goodPrice>
+      <inputDttm>2026-09-23 12:14:04</inputDttm>
+    </iros.openapi.service.vo.goodPriceVO>
+    <iros.openapi.service.vo.goodPriceVO>
+      <goodInspectDay>20260925</goodInspectDay>
+      <entpId>5499990000</entpId>
+      <goodId>1000</goodId>
+      <goodPrice>1280</goodPrice>
+      <inputDttm>2026-09-23 12:04:42</inputDttm>
+    </iros.openapi.service.vo.goodPriceVO>
+    <iros.openapi.service.vo.goodPriceVO>
+      <goodInspectDay>20260925</goodInspectDay>
+      <entpId>682</entpId>
+      <goodId>1000</goodId>
+      <goodPrice>1500</goodPrice>
+      <plusoneYn>N</plusoneYn>
+      <goodDcYn>N</goodDcYn>
+      <inputDttm>2026-09-23 14:06:47</inputDttm>
+    </iros.openapi.service.vo.goodPriceVO>
+  </result>
+  <resultCode>00</resultCode>
+  <resultMsg>ok</resultMsg>
+</response>

@@ -9,7 +9,7 @@
 
 ## 0. 검증 개요
 
-- 검증일: 2026-09-29 (1단계 API 검증 1-1 ~ 1-3)
+- 검증일: 2026-09-29 (1단계 API 검증 1-1 ~ 1-3, 2-2 페이징 확인 호출 2회)
 - 대상: 한국소비자원 생필품 가격 정보 API (`https://apis.data.go.kr/B551919/ProductPriceInfoService`)
 - 확인된 호출 제한: 2,000회/일 (개발자 확인)
 - 방법: 인증키는 환경변수로만 주입하고, 응답은 인증키 문자열이 포함되지 않았음을 확인한 뒤 프로젝트 외부에 저장했습니다.
@@ -17,9 +17,9 @@
 | API | 호출 | 요청 범위 |
 |---|---|---|
 | 상품 정보 `getProductInfoSvc.do` | 3회 (+ 인증키 없이 1회) | 파라미터 없음 / `numOfRows=10&pageNo=2` / `_type=json` |
-| 판매점 정보 `getStoreInfoSvc.do` | 1회 | 파라미터 없음 |
+| 판매점 정보 `getStoreInfoSvc.do` | 2회 | 파라미터 없음 / `numOfRows=10&pageNo=2` (2-2) |
 | 공통 코드 `getStandardInfoSvc.do` | 2회 | 파라미터 없음 / `classCode=AR` |
-| 가격 정보 `getProductPriceInfoSvc` | 15회 | `.do` 경로 1회, `goodInspectDay=20260925` + `goodId` 9개 상품(1000, 1003, 1008, 553, 224, 1075, 292, 254, 993) 각 1회, `goodInspectDay=20260925` + `entpId` 3곳(2223, 1861, 887), 필수 파라미터 누락 1회, `goodInspectDay=20260924` + `goodId=1000` 1회 |
+| 가격 정보 `getProductPriceInfoSvc` | 16회 | `.do` 경로 1회, `goodInspectDay=20260925` + `goodId` 9개 상품(1000, 1003, 1008, 553, 224, 1075, 292, 254, 993) 각 1회, `goodInspectDay=20260925` + `entpId` 3곳(2223, 1861, 887), 필수 파라미터 누락 1회, `goodInspectDay=20260924` + `goodId=1000` 1회, `goodInspectDay=20260925` + `goodId=1000` + `numOfRows=10&pageNo=2` 1회 (2-2) |
 
 ---
 
@@ -31,10 +31,13 @@
 | `_type=json` | 무시되고 XML 반환 | **상품 API에서만** 시험 |
 | Content-Type | XML임에도 `text/html; charset=UTF-8` | 4개 API의 HTTP 200 응답 모두 |
 | 루트 구조 | `<response>` 아래 `result`, `resultCode`, `resultMsg` | 4개 API 모두 |
-| 페이징 | `numOfRows=10&pageNo=2`를 지정해도 파라미터 없이 호출한 것과 같은 604건 반환 | **상품 API에서만** 1회 시험 |
-| 한 번에 반환되는 건수 | 판매점·가격·공통 코드 API는 페이징 파라미터를 시험하지 않았으며, 파라미터 없이 호출했을 때 조건에 맞는 결과가 한 번의 응답으로 반환됨 (최대 관찰치: 판매점 630건, 가격 약 420행) | 관찰한 호출에 한함 |
+| 페이징 파라미터 | `numOfRows=10&pageNo=2`를 지정해도 파라미터 없이 호출한 응답과 같은 결과 반환: 상품 604건, 판매점 630건(첫·마지막 ID 786·2227, 310,247바이트 동일), 가격 419행(상품 1000·2026-09-25, 첫·마지막 ID 887·1801, 114,050바이트 동일) | 상품·판매점·가격 API 각 1회 시험 |
+| 공통 코드 API의 페이징 | **[미검증]** 페이징 파라미터를 시험하지 않음. 파라미터 없이(`classCode=AR`) 호출했을 때 311건이 한 번에 반환됨 | 1회 관찰 |
+| 한 번에 반환되는 건수 | 파라미터 없이 호출했을 때 조건에 맞는 결과가 한 번의 응답으로 반환됨 (최대 관찰치: 판매점 630건, 가격 약 420행) | 관찰한 호출에 한함 |
 | 페이징 정보 필드 | 응답에 `totalCount`, `pageNo` 등 페이징 정보 없음 | 관찰한 모든 응답 |
 | 반환 건수 상한 | **[미검증]** 관찰치보다 많은 결과에서 잘리는지 알 수 없음 | — |
+
+- 추론(미확인): 상품·판매점·가격 API는 `numOfRows`·`pageNo`를 지원하지 않거나 무시하는 것으로 보입니다. 시험한 값은 `numOfRows=10&pageNo=2` 한 조합뿐이므로, 다른 값이나 다른 파라미터 이름의 동작은 확인하지 않았습니다.
 | 항목 요소 이름 | API마다 다름: 상품 `item`, 판매점 `iros.openapi.service.vo.entpInfoVO`, 가격 `iros.openapi.service.vo.goodPriceVO`, 공통 코드 `iros.openapi.service.vo.stdInfoVO` | 4개 API |
 
 ---
@@ -278,7 +281,7 @@
 - 가격 API의 `inputDttm`, `goodDcYn`, `goodDcStartDay`, `goodDcEndDay`, `plusoneYn`의 의미와, `goodPrice`가 정상가인지 할인가인지
 - `(본사)` 판매점 가격의 성격 (전국 공통 가격·권장 가격·본사 직접 판매 가격 여부)
 - 단위 코드 ME·LO·M0·MR·DA·MA, 업태 코드 SM·LM·DP·CS의 공식 명칭과 해당 `classCode`
-- 판매점·가격·공통 코드 API의 페이징 파라미터 지원 여부, 모든 API의 반환 건수 상한
+- 공통 코드 API의 페이징 파라미터 동작, 모든 API의 반환 건수 상한
 - `_type=json` 등 형식 파라미터의 상품 API 외 동작
 - API 전체 오류 코드 목록 (확인된 것: HTTP 400·401, `resultCode` `01`·`05`)
 - 광주·전남에서 옛 코드와 새 코드에 같은 이름으로 등록된 14쌍, 같은 시·도 안 같은 이름 판매점(GS더프레시 3쌍)이 동일한 물리적 매장인지 여부
