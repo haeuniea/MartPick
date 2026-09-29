@@ -33,6 +33,7 @@ MartPick(마트픽) — 장바구니 상품 기준으로 선택 지역 판매점
 - 의존성 주입은 생성자 주입만 — Service·Controller는 `@RequiredArgsConstructor` + `final` 필드 (`@Autowired` 금지)
 - DB 스키마 변경은 Flyway 마이그레이션(`V{n}__{설명}.sql`)으로만, 적용된 마이그레이션 파일은 수정하지 않음
 - 테스트 파일: `*Test.java`, 메서드명은 한글 허용 (`장바구니_총액_계산_성공()`)
+- DB를 사용하는 테스트(`@SpringBootTest`, `@DataJpaTest` 등)는 `@ActiveProfiles("test")`를 명시 — 테스트 전용 DB(`martpick_test`)를 사용하고 IDE 실행 시에도 개발용 DB에 연결되지 않도록 함
 - 날짜/시간: `java.time` (조사일은 `LocalDate`)
 
 ## Development Process 개발 방식

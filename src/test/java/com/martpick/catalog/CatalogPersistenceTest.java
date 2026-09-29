@@ -12,6 +12,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.context.ActiveProfiles;
 
 /**
  * 로컬 PostgreSQL(compose.yaml)에 Flyway 스키마를 적용한 상태로 실행한다.
@@ -19,6 +20,7 @@ import org.springframework.dao.DataIntegrityViolationException;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ActiveProfiles("test")
 class CatalogPersistenceTest {
 
 	private static final String TEST_AREA_CODE = "029900000";
