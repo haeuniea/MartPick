@@ -1,3 +1,12 @@
 spring:
   datasource:
     url: jdbc:postgresql://${MARTPICK_DB_HOST:localhost}:${MARTPICK_DB_PORT:5432}/${MARTPICK_TEST_DB_NAME:martpick_test}
+  jpa:
+    properties:
+      # N+1 검증용 SQL 실행 수 측정 (테스트 전용)
+      hibernate.generate_statistics: true
+
+logging:
+  level:
+    # 통계 활성화 시 세션마다 출력되는 지표 로그 억제
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN

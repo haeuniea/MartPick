@@ -32,7 +32,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 모든_상품_가격이_있는_판매점의_총가격을_계산한다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, SURVEYED_ROWS);
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, SURVEYED_ROWS);
 
 		assertThat(result.completeStores()).extracting(CompleteStore::entpId, CompleteStore::totalPrice)
 				.containsExactly(
@@ -44,7 +44,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 수량을_반영해_상품별_소계와_총가격을_계산한다() {
-		ComparisonResult result = comparator.compare(cart(2, 1, 1), PRODUCTS, List.of(
+		ComparedStores result = comparator.compare(cart(2, 1, 1), PRODUCTS, List.of(
 				row(89, 1000, 1150), row(89, 1003, 1480), row(89, 1008, 3990)));
 
 		CompleteStore store = result.completeStores().get(0);
@@ -58,7 +58,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 일부_상품_가격이_없는_판매점은_확인된_상품의_소계만_합산한다() {
-		ComparisonResult result = comparator.compare(cart(1, 2, 1), PRODUCTS, List.of(
+		ComparedStores result = comparator.compare(cart(1, 2, 1), PRODUCTS, List.of(
 				row(10, 1000, 3800), row(10, 1003, 2900)));
 
 		PartialStore store = result.partialStores().get(0);
@@ -72,7 +72,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 가격이_누락된_상품_목록을_장바구니_순서대로_정확히_제공한다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(row(10, 1003, 2900)));
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(row(10, 1003, 2900)));
 
 		assertThat(result.partialStores().get(0).missingProducts()).containsExactly(RAMEN, RICE_SOUP);
 	}
@@ -87,7 +87,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 가격이_누락된_판매점은_0원으로_합산되어_완전_비교에_들어가지_않는다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
 				row(1, 1000, 100), row(1, 1003, 100),
 				row(2, 1000, 1000), row(2, 1003, 1000), row(2, 1008, 1000)));
 
@@ -97,7 +97,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 완전_비교_판매점은_총가격_오름차순으로_정렬한다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
 				row(1, 1000, 3000), row(1, 1003, 3000), row(1, 1008, 3000),
 				row(2, 1000, 1000), row(2, 1003, 1000), row(2, 1008, 1000),
 				row(3, 1000, 2000), row(3, 1003, 2000), row(3, 1008, 2000)));
@@ -107,7 +107,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 총가격이_같으면_판매점_ID_숫자_오름차순으로_정렬한다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
 				row(5_499_990_000L, 1000, 1000), row(5_499_990_000L, 1003, 1000), row(5_499_990_000L, 1008, 1000),
 				row(10, 1000, 1000), row(10, 1003, 1000), row(10, 1008, 1000),
 				row(887, 1000, 1000), row(887, 1003, 1000), row(887, 1008, 1000),
@@ -119,7 +119,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 부분_비교_판매점은_knownSubtotal과_관계없이_판매점_ID_오름차순으로_정렬한다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(
 				row(887, 1000, 9000),
 				row(10, 1003, 100),
 				row(9, 1008, 5000)));
@@ -129,7 +129,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 장바구니_상품_가격이_하나도_없는_판매점은_결과에서_제외한다() {
-		ComparisonResult result = comparator.compare(List.of(new CartLine(1000L, 1)), List.of(RAMEN), List.of(
+		ComparedStores result = comparator.compare(List.of(new CartLine(1000L, 1)), List.of(RAMEN), List.of(
 				row(1, 1000, 1280),
 				row(2, 1003, 1980)));
 
@@ -138,31 +138,24 @@ class PriceComparatorTest {
 	}
 
 	@Test
-	void 완전_비교_판매점이_있으면_COMPARED이다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, SURVEYED_ROWS);
+	void 일부_상품_가격만_있는_판매점만_있으면_부분_비교_목록만_채운다() {
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(row(1, 1000, 1280)));
 
-		assertThat(result.status()).isEqualTo(ComparisonStatus.COMPARED);
+		assertThat(result.completeStores()).isEmpty();
+		assertThat(result.partialStores()).extracting(PartialStore::entpId).containsExactly(1L);
 	}
 
 	@Test
-	void 부분_비교_판매점만_있으면_NO_COMPLETE_STORE이다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of(row(1, 1000, 1280)));
-
-		assertThat(result.status()).isEqualTo(ComparisonStatus.NO_COMPLETE_STORE);
-	}
-
-	@Test
-	void 가격이_확인된_판매점이_없으면_NO_PRICED_STORE이다() {
-		ComparisonResult result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of());
+	void 가격_행이_없으면_두_목록_모두_비어_있다() {
+		ComparedStores result = comparator.compare(cart(1, 1, 1), PRODUCTS, List.of());
 
 		assertThat(result.completeStores()).isEmpty();
 		assertThat(result.partialStores()).isEmpty();
-		assertThat(result.status()).isEqualTo(ComparisonStatus.NO_PRICED_STORE);
 	}
 
 	@Test
 	void 도로명_기본주소가_있으면_도로명_주소를_사용한다() {
-		ComparisonResult result = comparator.compare(List.of(new CartLine(1000L, 1)), List.of(RAMEN), List.of(
+		ComparedStores result = comparator.compare(List.of(new CartLine(1000L, 1)), List.of(RAMEN), List.of(
 				new StorePriceRow(786L, "이마트연수점", "인천광역시 연수구 경원대로 184", "(동춘동)",
 						"인천광역시 연수구 동춘동  926-9 이마트", "이마트 연수점", 1000L, 1280)));
 
@@ -171,7 +164,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 도로명_기본주소가_없으면_지번_주소를_사용하고_공백과_null을_정리한다() {
-		ComparisonResult result = comparator.compare(List.of(new CartLine(1000L, 1)), List.of(RAMEN), List.of(
+		ComparedStores result = comparator.compare(List.of(new CartLine(1000L, 1)), List.of(RAMEN), List.of(
 				new StorePriceRow(89L, "GS더프레시울산구영점", null, "(무시되는 도로명 상세)",
 						"울산 울주군 범서읍  구영리 ", "849-1", 1000L, 1150),
 				new StorePriceRow(90L, "상세주소없음마트", "  ", null, "서울 도봉구", null, 1000L, 1200)));
@@ -182,7 +175,7 @@ class PriceComparatorTest {
 
 	@Test
 	void 큰_가격과_수량도_long으로_정확히_계산한다() {
-		ComparisonResult result = comparator.compare(cart(99, 99, 99), PRODUCTS, List.of(
+		ComparedStores result = comparator.compare(cart(99, 99, 99), PRODUCTS, List.of(
 				row(1, 1000, Integer.MAX_VALUE), row(1, 1003, Integer.MAX_VALUE), row(1, 1008, Integer.MAX_VALUE),
 				row(2, 1000, Integer.MAX_VALUE), row(2, 1003, Integer.MAX_VALUE)));
 

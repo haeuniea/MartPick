@@ -194,6 +194,30 @@ V1에는 `region`, `product`, `store`, `price`만 넣고, `member`와 `cart_item
   - 수량 0과 100
 - 회원·장바구니 서비스 로직은 미구현입니다(5단계).
 
+### 1-8. 가격 계산과 최종 비교 결과 구성의 책임 분리 (3단계)
+
+**문제 상황**
+3-1의 `PriceComparator`는 계산 결과를 `ComparisonResult`로 바로 돌려줬습니다. 그런데 3-2에서 화면 표시에 필요한 기준 조사일과 선택 지역을 결과에 담아야 했습니다. 이 정보를 넣으면 계산기가 계산과 무관한 값을 알게 되는 문제가 있었습니다.
+
+**AI Agent의 제안**
+두 가지 방식을 비교했습니다.
+- (a) 계산기는 패키지 내부 record `ComparedStores`(완전·부분 비교 목록)만 돌려주고, `ComparisonService`가 조사일과 지역을 더해 `ComparisonResult`를 만든다.
+- (b) 계산기에 조사일과 지역을 넘겨 그대로 담게 한다.
+
+(a)를 권장했습니다.
+
+**개발자의 판단**
+(a)를 승인하고 다음을 정했습니다.
+- 별도 결과 래퍼 없이 기존 `ComparisonResult`에 `inspectDay`, `areaCode`, `areaName`을 추가합니다.
+- `Product`를 `ProductInfo`로 바꾸는 일은 `ComparisonService`가 맡고, `PriceComparator`는 JPA 엔티티와 리포지토리에 의존하지 않고 계산과 정렬만 합니다.
+- 3-1 테스트는 반환 타입에 맞게 고치되, 검증하던 핵심 규칙이 빠지지 않도록 합니다.
+
+**구현 및 검증 결과** (테스트로 확인)
+- `PriceComparator.compare(...)`는 `ComparedStores`를 반환하고, `ComparisonService`가 `ComparisonResult`를 조립합니다.
+- 기존 상태 판정 테스트 3개는 두 곳으로 나눴습니다: 계산기의 목록 분류 검증 2개, `ComparisonResultTest`의 상태 판정 검증 3개. 계산·정렬·누락·주소·큰 금액 검증은 반환 타입만 바뀌어 그대로 통과했습니다.
+- 비교 1회당 SQL 실행 수는 판매점·상품 수와 관계없이 3회로 측정되었습니다(Hibernate 통계, 테스트 전용).
+- 상품별로 쿼리를 추가하는 변형을 넣자 4회 대 6회로 늘어 N+1 테스트가 실패했습니다. 확인 후 원래 코드로 되돌렸습니다.
+
 ---
 
 ## 2. 실제 API 응답 검증
@@ -293,7 +317,23 @@ PROJECT_SPEC.md 4-2와 API_RESEARCH.md 6-3에 반영했습니다. 수집 코드�
 
 ## 3. 오류 분석 및 해결
 
-실제로 발생한 오류의 원인과 해결 과정을 기록합니다. 해당 사례는 아직 없습니다.
+실제로 발생한 오류의 원인과 해결 과정을 기록합니다.
+
+### 3-1. 테스트 설정 빈 중복으로 인한 컨텍스트 로딩 실패 (3-2)
+
+**문제 상황**
+`ComparisonServiceTest` 첫 실행에서 18개 테스트가 모두 `Failed to load ApplicationContext`로 실패했습니다.
+
+**원인 분석 (AI Agent가 발견)**
+스택 트레이스의 근본 원인은 `NoUniqueBeanDefinitionException`이었습니다. `MartPickProperties` 타입의 빈이 2개 있었습니다.
+- `MartPickApplication`의 `@EnableConfigurationProperties`가 `application.yml`로 만드는 빈
+- 테스트 기준 조사일을 명시하려고 테스트의 `@TestConfiguration`에서 정의한 빈
+
+**해결 (AI Agent가 적용)**
+테스트 빈에 `@Primary`를 붙였습니다. 테스트가 설정 파일 값에 의존하지 않고 명시한 기준 조사일을 쓰도록 유지하기 위해서입니다. 개발자가 별도로 결정한 사항은 없습니다.
+
+**검증 결과** (테스트로 확인)
+수정 후 `ComparisonServiceTest` 18개를 포함해 전체 테스트가 통과했습니다.
 
 ## 4. 테스트 기반 수정
 

@@ -26,7 +26,7 @@ public class PriceComparator {
 	private static final Comparator<CompleteStore> COMPLETE_ORDER =
 			Comparator.comparingLong(CompleteStore::totalPrice).thenComparingLong(CompleteStore::entpId);
 
-	public ComparisonResult compare(List<CartLine> cart, List<ProductInfo> products, List<StorePriceRow> rows) {
+	ComparedStores compare(List<CartLine> cart, List<ProductInfo> products, List<StorePriceRow> rows) {
 		Map<Long, ProductInfo> productById = products.stream()
 				.collect(Collectors.toMap(ProductInfo::goodId, Function.identity()));
 		Set<Long> cartGoodIds = cart.stream().map(CartLine::goodId).collect(Collectors.toSet());
@@ -64,7 +64,7 @@ public class PriceComparator {
 
 		completeStores.sort(COMPLETE_ORDER);
 		partialStores.sort(Comparator.comparingLong(PartialStore::entpId));
-		return new ComparisonResult(List.copyOf(completeStores), List.copyOf(partialStores));
+		return new ComparedStores(List.copyOf(completeStores), List.copyOf(partialStores));
 	}
 
 	private static Map<Long, StorePrices> groupByStore(List<StorePriceRow> rows, Set<Long> cartGoodIds) {
