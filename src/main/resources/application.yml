@@ -14,6 +14,12 @@ spring:
     locations: classpath:db/migration
 
 martpick:
+  inspect-day: 2026-09-25
+  collect:
+    run: false
+    good-ids: [1000, 1003, 1008, 292, 254, 224, 993]
+    excluded-store-ids: [62, 115, 150, 2160]
+    allow-shrink: false
   public-data:
     base-url: https://apis.data.go.kr/B551919/ProductPriceInfoService
     service-key: ${DATA_GO_KR_SERVICE_KEY:}
