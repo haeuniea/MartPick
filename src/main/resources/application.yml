@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: martpick
+  datasource:
+    url: jdbc:postgresql://${MARTPICK_DB_HOST:localhost}:${MARTPICK_DB_PORT:5432}/${MARTPICK_DB_NAME:martpick}
+    username: ${MARTPICK_DB_USER:martpick}
+    password: ${MARTPICK_DB_PASSWORD:martpick}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
