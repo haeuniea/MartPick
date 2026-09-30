@@ -15,7 +15,7 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http.authorizeHttpRequests(auth -> auth
-				.requestMatchers("/", "/products", "/cart", "/cart/**", "/css/**", "/error").permitAll()
+				.requestMatchers("/", "/products", "/cart", "/cart/**", "/compare", "/css/**", "/error").permitAll()
 				.anyRequest().denyAll());
 		return http.build();
 	}

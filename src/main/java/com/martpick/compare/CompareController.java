@@ -1,0 +1,50 @@
+package com.martpick.compare;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import com.martpick.cart.GuestCart;
+import com.martpick.compare.InvalidComparisonRequestException.Reason;
+
+import lombok.RequiredArgsConstructor;
+
+/**
+ * 비회원 장바구니로 선택 지역의 판매점 가격을 비교한다. 조회만 하므로 GET으로 처리한다.
+ * 비교 요청 오류는 장바구니 화면으로 돌려보내 사유를 안내한다 (PROJECT_SPEC 5장).
+ */
+@Controller
+@RequiredArgsConstructor
+public class CompareController {
+
+	private final ComparisonService comparisonService;
+	private final GuestCart guestCart;
+
+	@GetMapping("/compare")
+	public String compare(@RequestParam(required = false) String areaCode, Model model,
+			RedirectAttributes redirectAttributes) {
+		ComparisonResult result;
+		try {
+			result = comparisonService.compare(areaCode, guestCart.lines());
+		} catch (InvalidComparisonRequestException e) {
+			redirectAttributes.addFlashAttribute("error", messageFor(e.getReason()));
+			return "redirect:/cart";
+		}
+		model.addAttribute("result", result);
+		model.addAttribute("inspectDay", result.inspectDay());
+		return "compare";
+	}
+
+	private static String messageFor(Reason reason) {
+		return switch (reason) {
+			case EMPTY_CART -> "장바구니가 비어 있습니다. 비교할 상품을 담아 주세요.";
+			case REGION_REQUIRED -> "비교할 지역을 선택해 주세요.";
+			case UNKNOWN_REGION -> "비교할 수 없는 지역입니다. 목록에서 지역을 다시 선택해 주세요.";
+			case UNKNOWN_PRODUCT -> "장바구니에 비교할 수 없는 상품이 있습니다. 장바구니를 확인해 주세요.";
+			case INVALID_CART_LINE, QUANTITY_OUT_OF_RANGE, DUPLICATE_PRODUCT ->
+					"장바구니 정보가 올바르지 않습니다. 장바구니를 확인해 주세요.";
+		};
+	}
+}

@@ -33,9 +33,10 @@ class SecurityConfigTest {
 	private ApplicationContext context;
 
 	@Test
-	void 비회원은_로그인_없이_상품_탐색_장바구니_화면과_CSS를_사용한다() throws Exception {
+	void 비회원은_로그인_없이_상품_탐색_장바구니_비교_화면과_CSS를_사용한다() throws Exception {
 		mockMvc.perform(get("/products")).andExpect(status().isOk());
 		mockMvc.perform(get("/cart")).andExpect(status().isOk());
+		mockMvc.perform(get("/compare")).andExpect(status().is3xxRedirection());
 		mockMvc.perform(get("/css/main.css")).andExpect(status().isOk());
 	}
 
