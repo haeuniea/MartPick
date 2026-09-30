@@ -212,11 +212,55 @@ class PublicDataClientTest {
 				});
 	}
 
+	@ParameterizedTest
+	@ValueSource(ints = {500, 503})
+	void HTTP_5xx_실패는_재시도_대상으로_분류된다(int status) {
+		expect("/getProductInfoSvc.do").andRespond(withStatus(HttpStatus.valueOf(status)));
+
+		assertThatThrownBy(() -> client.fetchProducts())
+				.isInstanceOfSatisfying(PublicDataApiException.class, e -> {
+					assertThat(e.getHttpStatus()).isEqualTo(status);
+					assertThat(e.isRetryable()).isTrue();
+				});
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {400, 401, 429})
+	void HTTP_4xx와_429_실패는_재시도_대상이_아니다(int status) {
+		expect("/getProductInfoSvc.do").andRespond(withStatus(HttpStatus.valueOf(status)));
+
+		assertThatThrownBy(() -> client.fetchProducts())
+				.isInstanceOfSatisfying(PublicDataApiException.class, e -> {
+					assertThat(e.getHttpStatus()).isEqualTo(status);
+					assertThat(e.isRetryable()).isFalse();
+				});
+	}
+
 	@Test
 	void 연결_실패와_타임아웃은_NETWORK로_실패한다() {
 		expect("/getProductInfoSvc.do").andRespond(withException(new SocketTimeoutException("Read timed out")));
 
 		assertFailure(() -> client.fetchProducts(), PublicDataApiException.Type.NETWORK);
+	}
+
+	@Test
+	void 타임아웃은_재시도_대상으로_분류된다() {
+		expect("/getProductInfoSvc.do").andRespond(withException(new SocketTimeoutException("Read timed out")));
+
+		assertThat(catchFailure(() -> client.fetchProducts()).isRetryable()).isTrue();
+	}
+
+	@Test
+	void resultCode가_00이_아닌_응답은_재시도_대상이_아니다() {
+		expect("/getProductInfoSvc.do").andRespond(withSuccess("""
+				<?xml version="1.0" encoding="UTF-8"?>
+				<response><result/><resultCode>30</resultCode><resultMsg>SERVICE KEY IS NOT REGISTERED ERROR.</resultMsg></response>
+				""", TEXT_HTML_UTF8));
+
+		PublicDataApiException failure = catchFailure(() -> client.fetchProducts());
+
+		assertThat(failure.getType()).isEqualTo(PublicDataApiException.Type.API_ERROR);
+		assertThat(failure.isRetryable()).isFalse();
 	}
 
 	@Test

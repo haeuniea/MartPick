@@ -23,6 +23,9 @@ martpick:
     good-ids: [1000, 1003, 1008, 292, 254, 224, 993]
     excluded-store-ids: [62, 115, 150, 2160]
     allow-shrink: false
+    # 네트워크 오류·타임아웃·HTTP 5xx만 재시도 (PROJECT_SPEC 4-1-1)
+    retry-delays: [1s, 2s]
+    max-total-retries: 30
   public-data:
     base-url: https://apis.data.go.kr/B551919/ProductPriceInfoService
     service-key: ${DATA_GO_KR_SERVICE_KEY:}

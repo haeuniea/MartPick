@@ -63,7 +63,8 @@ class ComparisonServiceTest {
 		@Bean
 		@Primary
 		MartPickProperties testMartPickProperties() {
-			return new MartPickProperties(DAY, new MartPickProperties.Collect(false, List.of(), List.of(), false));
+			return new MartPickProperties(DAY,
+					new MartPickProperties.Collect(false, List.of(), List.of(), false, List.of(), 0));
 		}
 	}
 

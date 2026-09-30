@@ -1,5 +1,6 @@
 package com.martpick.collect;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ import com.martpick.catalog.StoreRepository;
 import com.martpick.config.MartPickProperties;
 import com.martpick.publicdata.PriceRow;
 import com.martpick.publicdata.ProductRow;
+import com.martpick.publicdata.PublicDataApiException;
 import com.martpick.publicdata.PublicDataClient;
 import com.martpick.publicdata.RegionRow;
 import com.martpick.publicdata.StoreRow;
@@ -64,12 +67,13 @@ public class DataCollector {
 		List<Long> goodIds = config.goodIds();
 		Set<Long> excludedIds = Set.copyOf(config.excludedStoreIds());
 
-		List<RegionRow> regionRows = client.fetchRegions();
-		List<StoreRow> storeRows = client.fetchStores();
-		List<ProductRow> productRows = client.fetchProducts();
+		Map<String, Integer> retries = new LinkedHashMap<>();
+		List<RegionRow> regionRows = withRetry("지역 코드", client::fetchRegions, retries);
+		List<StoreRow> storeRows = withRetry("판매점", client::fetchStores, retries);
+		List<ProductRow> productRows = withRetry("상품", client::fetchProducts, retries);
 		Map<Long, List<PriceRow>> priceRows = new LinkedHashMap<>();
 		for (Long goodId : goodIds) {
-			priceRows.put(goodId, client.fetchPrices(inspectDay, goodId));
+			priceRows.put(goodId, withRetry("가격 goodId=" + goodId, () -> client.fetchPrices(inspectDay, goodId), retries));
 		}
 
 		List<RegionRow> sidoRows = regionRows.stream().filter(row -> SIDO_HIGH_CODE.equals(row.highCode())).toList();
@@ -91,9 +95,47 @@ public class DataCollector {
 		int excludedCount = (int) storeRows.stream().filter(row -> exclusionReason(row, excludedIds) != null).count();
 		CollectionReport report = new CollectionReport(inspectDay, sidoRows.size(), storeRows.size(), excludedCount,
 				targetProducts.size(), priceCounts, priceCounts.values().stream().mapToInt(Integer::intValue).sum(),
-				List.copyOf(warnings));
+				Map.copyOf(retries), List.copyOf(warnings));
 		log.info("공공데이터 수집 완료: {}", report);
 		return report;
+	}
+
+	/**
+	 * 일시적 오류(네트워크 오류·타임아웃, HTTP 5xx)만 설정된 대기 시간 간격으로 재시도한다 (PROJECT_SPEC 4-1-1).
+	 * 재시도 대상이 아니거나 호출당 재시도 횟수를 다 쓰면 마지막 예외를 그대로 던지고,
+	 * 수집 1회의 재시도 총합이 상한에 도달하면 더 재시도하지 않고 중단한다.
+	 *
+	 * @param retries 호출 구분별 재시도 횟수. 수집 1회 동안 공유한다.
+	 */
+	private <T> T withRetry(String label, Supplier<T> call, Map<String, Integer> retries) {
+		List<Duration> delays = properties.collect().retryDelays();
+		int maxTotalRetries = properties.collect().maxTotalRetries();
+		for (int attempt = 0; ; attempt++) {
+			try {
+				return call.get();
+			} catch (PublicDataApiException e) {
+				if (!e.isRetryable() || attempt >= delays.size()) {
+					throw e;
+				}
+				int used = retries.values().stream().mapToInt(Integer::intValue).sum();
+				if (used >= maxTotalRetries) {
+					throw new DataCollectionException("수집 1회의 재시도 총합 상한 " + maxTotalRetries + "회에 도달해 중단합니다: "
+							+ label + " (" + e.getMessage() + ")");
+				}
+				retries.merge(label, 1, Integer::sum);
+				log.warn("일시적 오류로 재시도 {}/{}: {} ({})", attempt + 1, delays.size(), label, e.getMessage());
+				sleep(delays.get(attempt));
+			}
+		}
+	}
+
+	private static void sleep(Duration delay) {
+		try {
+			Thread.sleep(delay.toMillis());
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new DataCollectionException("재시도 대기 중 중단되었습니다.");
+		}
 	}
 
 	private void validate(List<RegionRow> sidoRows, List<StoreRow> storeRows, List<ProductRow> targetProducts,

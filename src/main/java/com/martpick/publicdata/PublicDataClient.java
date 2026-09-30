@@ -104,7 +104,7 @@ public class PublicDataClient {
 			RawResponse response = request(operation, serviceKey, params);
 			if (!response.isSuccessful()) {
 				throw new PublicDataApiException(PublicDataApiException.Type.HTTP_ERROR, operation,
-						"HTTP " + response.status());
+						"HTTP " + response.status(), response.status());
 			}
 			List<Element> rows = PublicDataXmlParser.parseRows(response.body(), operation, rowElementName);
 			List<T> mapped = new ArrayList<>(rows.size());
@@ -140,7 +140,8 @@ public class PublicDataClient {
 		if (!e.getDetail().contains(serviceKey)) {
 			return e;
 		}
-		return new PublicDataApiException(e.getType(), e.getOperation(), e.getDetail().replace(serviceKey, REDACTED));
+		return new PublicDataApiException(e.getType(), e.getOperation(), e.getDetail().replace(serviceKey, REDACTED),
+				e.getHttpStatus());
 	}
 
 	private static String rootCauseName(Throwable e) {

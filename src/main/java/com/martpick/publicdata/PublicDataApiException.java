@@ -24,11 +24,26 @@ public class PublicDataApiException extends RuntimeException {
 	private final Type type;
 	private final String operation;
 	private final String detail;
+	/** HTTP 응답 상태 코드. HTTP 응답을 받지 못했거나 해당하지 않으면 0 */
+	private final int httpStatus;
 
 	public PublicDataApiException(Type type, String operation, String detail) {
+		this(type, operation, detail, 0);
+	}
+
+	public PublicDataApiException(Type type, String operation, String detail, int httpStatus) {
 		super("[" + type + "] " + operation + ": " + detail);
 		this.type = type;
 		this.operation = operation;
 		this.detail = detail;
+		this.httpStatus = httpStatus;
+	}
+
+	/**
+	 * 일시적 오류(네트워크 오류·타임아웃, HTTP 5xx)만 재시도 대상이다 (PROJECT_SPEC 4-1-1).
+	 * HTTP 429, 인증·요청 오류(4xx), resultCode 오류, 응답 형식·데이터 오류는 재시도하지 않는다.
+	 */
+	public boolean isRetryable() {
+		return type == Type.NETWORK || (type == Type.HTTP_ERROR && httpStatus >= 500 && httpStatus < 600);
 	}
 }

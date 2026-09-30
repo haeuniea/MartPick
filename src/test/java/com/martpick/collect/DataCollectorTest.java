@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -294,6 +297,106 @@ class DataCollectorTest {
 	}
 
 	@Test
+	void 일시적_오류_후_성공하면_재시도해서_저장하고_보고에_기록한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+		when(client.fetchPrices(DAY, SOUP)).thenThrow(networkError()).thenReturn(List.of(price(1, SOUP, 1980)));
+
+		CollectionReport report = collector(false).collect();
+
+		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1280", "1-1003-1980");
+		assertThat(report.retries()).containsExactly(Map.entry("가격 goodId=1003", 1));
+		assertThat(report.retryCount()).isEqualTo(1);
+	}
+
+	@Test
+	void HTTP_5xx가_두_번_나도_세_번째_시도에_성공하면_저장한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+		when(client.fetchPrices(DAY, SOUP)).thenThrow(httpError(503), httpError(500))
+				.thenReturn(List.of(price(1, SOUP, 1980)));
+
+		CollectionReport report = collector(false).collect();
+
+		verify(client, times(3)).fetchPrices(DAY, SOUP);
+		assertThat(pricesOf(DAY)).hasSize(2);
+		assertThat(report.retries()).containsEntry("가격 goodId=1003", 2);
+	}
+
+	@Test
+	void 세_번_모두_일시적_오류면_중단하고_아무것도_저장하지_않는다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+		when(client.fetchPrices(DAY, SOUP)).thenThrow(networkError());
+
+		assertThatThrownBy(() -> collector(false).collect()).isInstanceOf(PublicDataApiException.class);
+
+		verify(client, times(3)).fetchPrices(DAY, SOUP);
+		assertThat(tableCounts()).containsOnly(0L);
+	}
+
+	@Test
+	void 재시도_대상이_아닌_오류는_한_번만_호출하고_중단한다() {
+		List<PublicDataApiException> failures = List.of(httpError(401), httpError(429), httpError(400),
+				new PublicDataApiException(PublicDataApiException.Type.API_ERROR, "getProductPriceInfoSvc", "resultCode=30"),
+				new PublicDataApiException(PublicDataApiException.Type.INVALID_ROW, "getProductPriceInfoSvc", "형식 오류"));
+		for (PublicDataApiException failure : failures) {
+			client = mock(PublicDataClient.class);
+			givenApi(regions(), List.of(store(1, SEOUL)), products(),
+					Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+			when(client.fetchPrices(DAY, SOUP)).thenThrow(failure);
+
+			assertThatThrownBy(() -> collector(false).collect()).as(failure.getMessage()).isSameAs(failure);
+
+			verify(client, times(1)).fetchPrices(DAY, SOUP);
+			assertThat(tableCounts()).containsOnly(0L);
+		}
+	}
+
+	@Test
+	void 가격_외의_API_호출도_일시적_오류면_재시도한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+		when(client.fetchStores()).thenThrow(networkError()).thenReturn(List.of(store(1, SEOUL)));
+
+		CollectionReport report = collector(false).collect();
+
+		assertThat(storeRepository.count()).isEqualTo(1);
+		assertThat(report.retries()).containsExactly(Map.entry("판매점", 1));
+	}
+
+	@Test
+	void 수집_1회의_재시도_총합이_상한에_도달하면_더_재시도하지_않고_중단한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+		when(client.fetchStores()).thenThrow(networkError()).thenReturn(List.of(store(1, SEOUL)));
+		when(client.fetchPrices(DAY, RAMEN)).thenThrow(networkError()).thenReturn(List.of(price(1, RAMEN, 1280)));
+		when(client.fetchPrices(DAY, SOUP)).thenThrow(networkError()).thenReturn(List.of(price(1, SOUP, 1980)));
+
+		assertThatThrownBy(() -> collector(false, 2).collect())
+				.isInstanceOf(DataCollectionException.class)
+				.hasMessageContaining("재시도")
+				.hasMessageContaining("2회")
+				.hasMessageContaining("goodId=1003");
+
+		verify(client, times(1)).fetchPrices(DAY, SOUP);
+		assertThat(tableCounts()).containsOnly(0L);
+	}
+
+	@Test
+	void 재시도_총합이_상한과_같으면_정상_저장한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+		when(client.fetchStores()).thenThrow(networkError()).thenReturn(List.of(store(1, SEOUL)));
+		when(client.fetchPrices(DAY, SOUP)).thenThrow(networkError()).thenReturn(List.of(price(1, SOUP, 1980)));
+
+		CollectionReport report = collector(false, 2).collect();
+
+		assertThat(report.retryCount()).isEqualTo(2);
+		assertThat(pricesOf(DAY)).hasSize(2);
+	}
+
+	@Test
 	void 응답_건수가_딱_떨어지면_경고만_남기고_저장한다() {
 		givenApi(regions(), stores(100), products(), Map.of(RAMEN, prices(100, RAMEN), SOUP, prices(3, SOUP)));
 
@@ -304,10 +407,28 @@ class DataCollectorTest {
 	}
 
 	private DataCollector collector(boolean allowShrink) {
+		return collector(allowShrink, 30);
+	}
+
+	/**
+	 * 재시도 대기 시간은 테스트 속도를 위해 0으로 둔다. 운영 값(1초·2초)은 설정 바인딩 테스트로 확인한다.
+	 */
+	private DataCollector collector(boolean allowShrink, int maxTotalRetries) {
 		MartPickProperties properties = new MartPickProperties(DAY,
-				new MartPickProperties.Collect(false, List.of(RAMEN, SOUP), List.of(115L), allowShrink));
+				new MartPickProperties.Collect(false, List.of(RAMEN, SOUP), List.of(115L), allowShrink,
+						List.of(Duration.ZERO, Duration.ZERO), maxTotalRetries));
 		return new DataCollector(client, properties, regionRepository, storeRepository, productRepository,
 				priceRepository, new TransactionTemplate(transactionManager));
+	}
+
+	private static PublicDataApiException networkError() {
+		return new PublicDataApiException(PublicDataApiException.Type.NETWORK, "getProductPriceInfoSvc",
+				"요청 실패 (SocketTimeoutException)");
+	}
+
+	private static PublicDataApiException httpError(int status) {
+		return new PublicDataApiException(PublicDataApiException.Type.HTTP_ERROR, "getProductPriceInfoSvc",
+				"HTTP " + status, status);
 	}
 
 	private void givenApi(List<RegionRow> regions, List<StoreRow> stores, List<ProductRow> products,
