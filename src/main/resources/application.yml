@@ -20,7 +20,8 @@ martpick:
   inspect-day: 2026-09-25
   collect:
     run: false
-    good-ids: [1000, 1003, 1008, 292, 254, 224, 993]
+    # 기준 상품: 수집 범위가 아니라 필수 검증(V2, V4)과 회귀 검증에 사용. 수집은 상품 API 응답의 전체 상품 대상
+    baseline-good-ids: [1000, 1003, 1008, 292, 254, 224, 993]
     excluded-store-ids: [62, 115, 150, 2160]
     allow-shrink: false
     # 네트워크 오류·타임아웃·HTTP 5xx만 재시도 (PROJECT_SPEC 4-1-1)

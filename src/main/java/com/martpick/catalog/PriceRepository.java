@@ -13,10 +13,12 @@ public interface PriceRepository extends JpaRepository<Price, Long> {
 
 	long countByInspectDayAndProductGoodId(LocalDate inspectDay, Long goodId);
 
+	/**
+	 * 기준 조사일의 가격을 모두 지운다. 전체 수집의 가격 교체에만 사용한다 (PROJECT_SPEC 4-1-1).
+	 */
 	@Modifying
-	@Query("delete from Price p where p.inspectDay = :inspectDay and p.product.goodId in :goodIds")
-	int deleteByInspectDayAndGoodIds(@Param("inspectDay") LocalDate inspectDay,
-			@Param("goodIds") Collection<Long> goodIds);
+	@Query("delete from Price p where p.inspectDay = :inspectDay")
+	int deleteByInspectDay(@Param("inspectDay") LocalDate inspectDay);
 
 	/**
 	 * 기준 조사일·선택 지역·비교 대상(본사 제외) 판매점의 장바구니 상품 가격을 한 번에 조회한다.

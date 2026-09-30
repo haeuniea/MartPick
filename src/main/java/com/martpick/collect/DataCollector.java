@@ -3,11 +3,13 @@ package com.martpick.collect;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -35,8 +37,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 공공데이터를 모두 조회·검증한 뒤 한 트랜잭션으로 저장한다.
+ * 공공데이터 API 상품 응답의 전체 상품을 대상으로 모두 조회·검증한 뒤 한 트랜잭션으로 저장한다 (PROJECT_SPEC 4-1-1).
  * API 호출이나 검증이 하나라도 실패하면 DB를 변경하지 않는다.
+ * 기준 상품(baselineGoodIds)은 수집 범위가 아니라 필수 검증(V2, V4)과 회귀 검증용 급감 안전장치에만 쓴다.
  */
 @Slf4j
 @Service
@@ -53,6 +56,9 @@ public class DataCollector {
 	 */
 	private static final double SHRINK_GUARD_RATIO = 0.8;
 
+	/** 수집 보고의 상품별 가격 건수 분포 구간 크기 */
+	private static final int DISTRIBUTION_BUCKET = 100;
+
 	private final PublicDataClient client;
 	private final MartPickProperties properties;
 	private final RegionRepository regionRepository;
@@ -64,38 +70,48 @@ public class DataCollector {
 	public CollectionReport collect() {
 		LocalDate inspectDay = properties.inspectDay();
 		MartPickProperties.Collect config = properties.collect();
-		List<Long> goodIds = config.goodIds();
+		List<Long> baselineIds = config.baselineGoodIds();
 		Set<Long> excludedIds = Set.copyOf(config.excludedStoreIds());
 
 		Map<String, Integer> retries = new LinkedHashMap<>();
 		List<RegionRow> regionRows = withRetry("지역 코드", client::fetchRegions, retries);
 		List<StoreRow> storeRows = withRetry("판매점", client::fetchStores, retries);
 		List<ProductRow> productRows = withRetry("상품", client::fetchProducts, retries);
+
+		// 가격 호출(상품 수만큼)을 하기 전에 검증할 수 있는 것은 먼저 검증해 호출 한도를 아낀다.
+		List<RegionRow> sidoRows = regionRows.stream().filter(row -> SIDO_HIGH_CODE.equals(row.highCode())).toList();
+		validateBeforePrices(sidoRows, storeRows, productRows, baselineIds);
+
 		Map<Long, List<PriceRow>> priceRows = new LinkedHashMap<>();
-		for (Long goodId : goodIds) {
+		for (ProductRow product : productRows) {
+			long goodId = product.goodId();
 			priceRows.put(goodId, withRetry("가격 goodId=" + goodId, () -> client.fetchPrices(inspectDay, goodId), retries));
 		}
-
-		List<RegionRow> sidoRows = regionRows.stream().filter(row -> SIDO_HIGH_CODE.equals(row.highCode())).toList();
-		List<ProductRow> targetProducts = productRows.stream().filter(row -> goodIds.contains(row.goodId())).toList();
-		validate(sidoRows, storeRows, targetProducts, goodIds, priceRows);
+		if (priceRows.size() != productRows.size()) {
+			throw new DataCollectionException("상품 응답 " + productRows.size() + "건과 가격을 조회한 상품 "
+					+ priceRows.size() + "건이 다릅니다.");
+		}
+		validatePrices(storeRows, baselineIds, priceRows);
 
 		List<String> warnings = new ArrayList<>();
-		warnRoundCounts(storeRows, priceRows, warnings);
+		warnRoundCounts(storeRows, productRows, warnings);
 		warnHeadquartersMismatch(storeRows, excludedIds, warnings);
 
+		Map<Long, Long> missingProducts = new LinkedHashMap<>();
 		transactionTemplate.executeWithoutResult(status -> {
-			guardShrink(inspectDay, priceRows, config.allowShrink(), warnings);
+			guardShrink(inspectDay, baselineIds, priceRows, config.allowShrink(), warnings);
 			warnMissingStores(storeRows, warnings);
-			save(inspectDay, sidoRows, storeRows, targetProducts, priceRows, excludedIds);
+			missingProducts.putAll(findMissingProducts(inspectDay, productRows));
+			if (!missingProducts.isEmpty()) {
+				warnings.add("응답에 없는 기존 상품 " + missingProducts.size() + "개 (상품은 유지하고 기준 조사일 가격 "
+						+ missingProducts.values().stream().mapToLong(Long::longValue).sum() + "건은 전체 교체로 삭제): "
+						+ missingProducts.keySet());
+			}
+			save(inspectDay, sidoRows, storeRows, productRows, priceRows, excludedIds);
 		});
 
-		Map<Long, Integer> priceCounts = new LinkedHashMap<>();
-		priceRows.forEach((goodId, rows) -> priceCounts.put(goodId, rows.size()));
-		int excludedCount = (int) storeRows.stream().filter(row -> exclusionReason(row, excludedIds) != null).count();
-		CollectionReport report = new CollectionReport(inspectDay, sidoRows.size(), storeRows.size(), excludedCount,
-				targetProducts.size(), priceCounts, priceCounts.values().stream().mapToInt(Integer::intValue).sum(),
-				Map.copyOf(retries), List.copyOf(warnings));
+		CollectionReport report = report(inspectDay, sidoRows, storeRows, excludedIds, productRows, priceRows,
+				baselineIds, missingProducts, retries, warnings);
 		log.info("공공데이터 수집 완료: {}", report);
 		return report;
 	}
@@ -138,8 +154,11 @@ public class DataCollector {
 		}
 	}
 
-	private void validate(List<RegionRow> sidoRows, List<StoreRow> storeRows, List<ProductRow> targetProducts,
-			List<Long> goodIds, Map<Long, List<PriceRow>> priceRows) {
+	/**
+	 * V1, V2, V3: 지역·판매점·상품 응답만으로 할 수 있는 필수 검증.
+	 */
+	private void validateBeforePrices(List<RegionRow> sidoRows, List<StoreRow> storeRows, List<ProductRow> productRows,
+			List<Long> baselineIds) {
 		if (sidoRows.isEmpty()) {
 			throw new DataCollectionException("V1: 지역 코드 응답에 시·도 코드(highCode=" + SIDO_HIGH_CODE + ")가 없습니다.");
 		}
@@ -150,10 +169,15 @@ public class DataCollector {
 			throw new DataCollectionException("V1: 시·도 목록에 없는 판매점 지역 코드: " + unknownAreas);
 		}
 
-		Set<Long> foundProducts = targetProducts.stream().map(ProductRow::goodId).collect(Collectors.toSet());
-		List<Long> missingProducts = goodIds.stream().filter(id -> !foundProducts.contains(id)).toList();
-		if (!missingProducts.isEmpty()) {
-			throw new DataCollectionException("V2: 상품 응답에 없는 수집 대상 상품: " + missingProducts);
+		Set<Long> productIds = new HashSet<>();
+		Set<Long> duplicateProducts = productRows.stream().map(ProductRow::goodId)
+				.filter(id -> !productIds.add(id)).collect(Collectors.toCollection(TreeSet::new));
+		if (!duplicateProducts.isEmpty()) {
+			throw new DataCollectionException("V2: 상품 응답의 상품 ID 중복: " + duplicateProducts);
+		}
+		List<Long> missingBaseline = baselineIds.stream().filter(id -> !productIds.contains(id)).toList();
+		if (!missingBaseline.isEmpty()) {
+			throw new DataCollectionException("V2: 상품 응답에 없는 기준 상품: " + missingBaseline);
 		}
 
 		Set<Long> storeIds = new HashSet<>();
@@ -161,16 +185,19 @@ public class DataCollector {
 		if (!duplicateStores.isEmpty()) {
 			throw new DataCollectionException("V3: 판매점 ID 중복: " + duplicateStores);
 		}
+	}
 
-		// 초기 수집 정책: 사전 조사(API_RESEARCH 6-3)에서 대상 상품 7개의 기준 조사일 가격이 확인되었으므로
-		// 0건을 실패로 본다. API의 정상 빈 응답(resultCode=00, 빈 result) 자체를 오류로 보는 것은 아니다.
-		List<Long> emptyPrices = priceRows.entrySet().stream()
-				.filter(entry -> entry.getValue().isEmpty()).map(Map.Entry::getKey).toList();
-		if (!emptyPrices.isEmpty()) {
-			throw new DataCollectionException("V4: 기준 조사일 가격이 0건인 수집 대상 상품: " + emptyPrices
-					+ " (사전 조사에서 가격이 확인된 상품이므로 초기 수집 정책상 실패로 처리)");
+	/**
+	 * V4, V5, V6: 가격 응답 검증. 기준 상품 외의 상품은 가격이 0건이어도 정상이다.
+	 */
+	private void validatePrices(List<StoreRow> storeRows, List<Long> baselineIds, Map<Long, List<PriceRow>> priceRows) {
+		// 기준 상품은 사전 조사(API_RESEARCH 6-3)에서 기준 조사일 가격이 확인되었으므로 0건이면 부분 응답을 의심한다.
+		List<Long> emptyBaseline = baselineIds.stream().filter(id -> priceRows.get(id).isEmpty()).toList();
+		if (!emptyBaseline.isEmpty()) {
+			throw new DataCollectionException("V4: 기준 조사일 가격이 0건인 기준 상품: " + emptyBaseline);
 		}
 
+		Set<Long> storeIds = storeRows.stream().map(StoreRow::entpId).collect(Collectors.toSet());
 		Set<Long> unknownStores = new TreeSet<>();
 		Set<String> priceKeys = new HashSet<>();
 		List<String> duplicatePrices = new ArrayList<>();
@@ -191,15 +218,16 @@ public class DataCollector {
 		}
 	}
 
-	private void warnRoundCounts(List<StoreRow> storeRows, Map<Long, List<PriceRow>> priceRows, List<String> warnings) {
+	/**
+	 * 판매점·상품 응답 건수에만 적용한다. 상품별 가격 건수는 상품 수만큼 많아 신호로 쓰지 않는다.
+	 */
+	private void warnRoundCounts(List<StoreRow> storeRows, List<ProductRow> productRows, List<String> warnings) {
 		if (isRound(storeRows.size())) {
 			warnings.add("참고 신호: 판매점 응답 건수가 " + storeRows.size() + "건으로 딱 떨어집니다. 누락 여부를 확인하세요.");
 		}
-		priceRows.forEach((goodId, rows) -> {
-			if (isRound(rows.size())) {
-				warnings.add("참고 신호: 상품 " + goodId + " 가격 응답 건수가 " + rows.size() + "건으로 딱 떨어집니다. 누락 여부를 확인하세요.");
-			}
-		});
+		if (isRound(productRows.size())) {
+			warnings.add("참고 신호: 상품 응답 건수가 " + productRows.size() + "건으로 딱 떨어집니다. 누락 여부를 확인하세요.");
+		}
 	}
 
 	private static boolean isRound(int count) {
@@ -220,20 +248,24 @@ public class DataCollector {
 		}
 	}
 
-	private void guardShrink(LocalDate inspectDay, Map<Long, List<PriceRow>> priceRows, boolean allowShrink,
-			List<String> warnings) {
-		priceRows.forEach((goodId, rows) -> {
+	/**
+	 * 기준 상품별 급감 안전장치(G1). 기준 상품 외의 상품에는 적용하지 않는다.
+	 */
+	private void guardShrink(LocalDate inspectDay, List<Long> baselineIds, Map<Long, List<PriceRow>> priceRows,
+			boolean allowShrink, List<String> warnings) {
+		for (Long goodId : baselineIds) {
+			int newCount = priceRows.get(goodId).size();
 			long existing = priceRepository.countByInspectDayAndProductGoodId(inspectDay, goodId);
-			if (existing == 0 || rows.size() >= existing * SHRINK_GUARD_RATIO) {
-				return;
+			if (existing == 0 || newCount >= existing * SHRINK_GUARD_RATIO) {
+				continue;
 			}
-			String message = "상품 " + goodId + " 가격이 기존 " + existing + "건에서 " + rows.size() + "건으로 "
+			String message = "기준 상품 " + goodId + " 가격이 기존 " + existing + "건에서 " + newCount + "건으로 "
 					+ (int) (SHRINK_GUARD_RATIO * 100) + "% 미만으로 줄었습니다 (임시 안전장치, 완전성 증명 기준 아님)";
 			if (!allowShrink) {
 				throw new DataCollectionException(message + ". 의도한 감소라면 martpick.collect.allow-shrink=true로 실행하세요.");
 			}
 			warnings.add(message + ". allow-shrink 옵션으로 저장을 허용했습니다.");
-		});
+		}
 	}
 
 	private void warnMissingStores(List<StoreRow> storeRows, List<String> warnings) {
@@ -245,15 +277,30 @@ public class DataCollector {
 		}
 	}
 
+	/**
+	 * @return 상품 응답에 없는 기존 상품 ID와, 전체 교체로 삭제될 그 상품의 기준 조사일 가격 건수
+	 */
+	private Map<Long, Long> findMissingProducts(LocalDate inspectDay, List<ProductRow> productRows) {
+		Set<Long> responseIds = productRows.stream().map(ProductRow::goodId).collect(Collectors.toSet());
+		Map<Long, Long> missing = new LinkedHashMap<>();
+		productRepository.findAll().stream().map(Product::getGoodId)
+				.filter(id -> !responseIds.contains(id)).sorted()
+				.forEach(id -> missing.put(id, priceRepository.countByInspectDayAndProductGoodId(inspectDay, id)));
+		return missing;
+	}
+
+	/**
+	 * 기준 조사일 가격은 이번 응답으로 전체 교체한다. 응답에서 사라진 상품의 기준 조사일 가격도 남기지 않는다.
+	 */
 	private void save(LocalDate inspectDay, List<RegionRow> sidoRows, List<StoreRow> storeRows,
-			List<ProductRow> targetProducts, Map<Long, List<PriceRow>> priceRows, Set<Long> excludedIds) {
+			List<ProductRow> productRows, Map<Long, List<PriceRow>> priceRows, Set<Long> excludedIds) {
 		regionRepository.saveAll(sidoRows.stream().map(row -> new Region(row.code(), row.name())).toList());
 		storeRepository.saveAll(storeRows.stream().map(row -> toStore(row, excludedIds)).toList());
-		productRepository.saveAll(targetProducts.stream()
+		productRepository.saveAll(productRows.stream()
 				.map(row -> new Product(row.goodId(), row.name(), row.totalCnt(), row.totalDivCode())).toList());
 		priceRepository.flush();
 
-		priceRepository.deleteByInspectDayAndGoodIds(inspectDay, priceRows.keySet());
+		priceRepository.deleteByInspectDay(inspectDay);
 		List<Price> prices = new ArrayList<>();
 		priceRows.values().forEach(rows -> rows.forEach(row -> prices.add(new Price(
 				storeRepository.getReferenceById(row.entpId()),
@@ -261,6 +308,40 @@ public class DataCollector {
 				row.inspectDay(), row.price()))));
 		priceRepository.saveAll(prices);
 		priceRepository.flush();
+	}
+
+	private CollectionReport report(LocalDate inspectDay, List<RegionRow> sidoRows, List<StoreRow> storeRows,
+			Set<Long> excludedIds, List<ProductRow> productRows, Map<Long, List<PriceRow>> priceRows,
+			List<Long> baselineIds, Map<Long, Long> missingProducts, Map<String, Integer> retries, List<String> warnings) {
+		int excludedCount = (int) storeRows.stream().filter(row -> exclusionReason(row, excludedIds) != null).count();
+		int pricedProductCount = (int) priceRows.values().stream().filter(rows -> !rows.isEmpty()).count();
+		int totalPriceCount = priceRows.values().stream().mapToInt(List::size).sum();
+		Map<Long, Integer> baselinePriceCounts = new LinkedHashMap<>();
+		baselineIds.forEach(id -> baselinePriceCounts.put(id, priceRows.get(id).size()));
+		return new CollectionReport(inspectDay, sidoRows.size(), storeRows.size(), excludedCount,
+				productRows.size(), priceRows.size(), pricedProductCount, totalPriceCount,
+				Collections.unmodifiableMap(baselinePriceCounts), priceCountDistribution(priceRows),
+				Collections.unmodifiableMap(new LinkedHashMap<>(missingProducts)),
+				Collections.unmodifiableMap(new LinkedHashMap<>(retries)), List.copyOf(warnings));
+	}
+
+	/**
+	 * 상품별 가격 건수를 "0", "1-99", "100-199" … 구간으로 센다. 구간은 작은 건수부터 나열한다.
+	 */
+	private static Map<String, Integer> priceCountDistribution(Map<Long, List<PriceRow>> priceRows) {
+		TreeMap<Integer, Integer> byBucket = new TreeMap<>();
+		priceRows.values().forEach(rows -> byBucket.merge(
+				rows.isEmpty() ? -1 : rows.size() / DISTRIBUTION_BUCKET * DISTRIBUTION_BUCKET, 1, Integer::sum));
+		Map<String, Integer> distribution = new LinkedHashMap<>();
+		byBucket.forEach((start, count) -> distribution.put(bucketLabel(start), count));
+		return Collections.unmodifiableMap(distribution);
+	}
+
+	private static String bucketLabel(int start) {
+		if (start < 0) {
+			return "0";
+		}
+		return (start == 0 ? 1 : start) + "-" + (start + DISTRIBUTION_BUCKET - 1);
 	}
 
 	private static Store toStore(StoreRow row, Set<Long> excludedIds) {

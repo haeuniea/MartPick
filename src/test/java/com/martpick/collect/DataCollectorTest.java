@@ -3,8 +3,11 @@ package com.martpick.collect;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,10 +58,11 @@ class DataCollectorTest {
 	private static final LocalDate OTHER_DAY = LocalDate.of(2026, 9, 18);
 	private static final String SEOUL = "020100000";
 	private static final String GYEONGGI = "020900000";
+	/** 테스트의 기준 상품은 RAMEN, SOUP 두 개로 둔다. */
 	private static final long RAMEN = 1000L;
 	private static final long SOUP = 1003L;
-	/** 실제 수집 대상 7개(1000, 1003, 1008, 292, 254, 224, 993)에 없는 상품 */
-	private static final long NOT_TARGET = 553L;
+	/** 기준 상품이 아닌 상품 (실제 기준 상품 7개에도 없음) */
+	private static final long EXTRA = 553L;
 
 	@Autowired
 	private RegionRepository regionRepository;
@@ -92,19 +96,68 @@ class DataCollectorTest {
 	}
 
 	@Test
-	void 첫_수집은_시도_코드와_판매점_대상_상품_가격을_저장한다() {
+	void 첫_수집은_시도_코드와_판매점과_상품_응답의_전체_상품_가격을_저장한다() {
 		givenApi(regions(), List.of(store(1, SEOUL), store(2, GYEONGGI)), products(),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1280), price(2, RAMEN, 1150)),
-						SOUP, List.of(price(1, SOUP, 1980), price(2, SOUP, 1480))));
+						SOUP, List.of(price(1, SOUP, 1980), price(2, SOUP, 1480)),
+						EXTRA, List.of(price(2, EXTRA, 4500))));
 
 		CollectionReport report = collector(false).collect();
 
 		assertThat(regionRepository.findAll()).extracting("code").containsExactlyInAnyOrder(SEOUL, GYEONGGI);
 		assertThat(storeRepository.count()).isEqualTo(2);
-		assertThat(productRepository.findAll()).extracting("goodId").containsExactlyInAnyOrder(RAMEN, SOUP);
-		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1280", "2-1000-1150", "1-1003-1980", "2-1003-1480");
-		assertThat(report.totalPriceCount()).isEqualTo(4);
-		assertThat(report.priceCounts()).containsEntry(RAMEN, 2).containsEntry(SOUP, 2);
+		assertThat(productRepository.findAll()).extracting("goodId").containsExactlyInAnyOrder(RAMEN, SOUP, EXTRA);
+		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder(
+				"1-1000-1280", "2-1000-1150", "1-1003-1980", "2-1003-1480", "2-553-4500");
+		assertThat(report.totalPriceCount()).isEqualTo(5);
+		assertThat(report.baselinePriceCounts()).containsExactly(Map.entry(RAMEN, 2), Map.entry(SOUP, 2));
+	}
+
+	@Test
+	void 가격_조회_대상은_기준_상품이_아니라_상품_응답의_전체_상품이다() {
+		long onlyInDb = 8888L;
+		jdbc.update("insert into product values (?, 'DB에만 있는 상품', '1', 'EA')", onlyInDb);
+		givenApi(regions(), List.of(store(1, SEOUL)),
+				List.of(product(RAMEN), product(SOUP), product(EXTRA), product(7777L)),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+
+		collector(false).collect();
+
+		for (long goodId : new long[] {RAMEN, SOUP, EXTRA, 7777L}) {
+			verify(client, times(1)).fetchPrices(DAY, goodId);
+		}
+		verify(client, never()).fetchPrices(DAY, onlyInDb);
+	}
+
+	@Test
+	void 기준_외_상품은_기준_조사일_가격이_0건이어도_저장한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980)), EXTRA, List.of()));
+
+		CollectionReport report = collector(false).collect();
+
+		assertThat(productRepository.existsById(EXTRA)).isTrue();
+		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1280", "1-1003-1980");
+		assertThat(report.productCount()).isEqualTo(3);
+		assertThat(report.pricedProductCount()).isEqualTo(2);
+		assertThat(report.noPriceProductCount()).isEqualTo(1);
+	}
+
+	@Test
+	void 상품_응답_건수와_가격을_조회한_상품_수_가격_건수_분포를_보고한다() {
+		List<ProductRow> products = List.of(product(RAMEN), product(SOUP), product(EXTRA), product(7777L));
+		givenApi(regions(), stores(150), products,
+				Map.of(RAMEN, prices(150, RAMEN), SOUP, prices(5, SOUP), EXTRA, prices(100, EXTRA)));
+
+		CollectionReport report = collector(false).collect();
+
+		assertThat(report.productCount()).isEqualTo(4);
+		assertThat(report.priceQueriedProductCount()).isEqualTo(4);
+		assertThat(report.pricedProductCount()).isEqualTo(3);
+		assertThat(report.noPriceProductCount()).isEqualTo(1);
+		assertThat(report.totalPriceCount()).isEqualTo(255);
+		assertThat(report.priceCountDistribution())
+				.containsExactly(Map.entry("0", 1), Map.entry("1-99", 1), Map.entry("100-199", 2));
 	}
 
 	@Test
@@ -141,20 +194,39 @@ class DataCollectorTest {
 	}
 
 	@Test
-	void 재수집해도_다른_조사일과_수집_대상이_아닌_상품의_가격은_유지된다() {
+	void 재수집해도_다른_조사일의_가격은_유지된다() {
 		givenApi(regions(), List.of(store(1, SEOUL)), products(),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
 		collector(false).collect();
-		jdbc.update("insert into product values (?, '신라면(5개입)', '5', 'EA')", NOT_TARGET);
 		jdbc.update("insert into price (entp_id, good_id, inspect_day, price) values (1, ?, ?, 900)", RAMEN, OTHER_DAY);
-		jdbc.update("insert into price (entp_id, good_id, inspect_day, price) values (1, ?, ?, 2000)", NOT_TARGET, DAY);
 
 		givenApi(regions(), List.of(store(1, SEOUL)), products(),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1300)), SOUP, List.of(price(1, SOUP, 2000))));
 		collector(false).collect();
 
 		assertThat(pricesOf(OTHER_DAY)).containsExactly("1-1000-900");
-		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1300", "1-1003-2000", "1-553-2000");
+		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1300", "1-1003-2000");
+	}
+
+	@Test
+	void 상품_응답에서_사라진_상품은_상품을_유지하고_조사일_가격은_전체_교체로_남지_않는다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980)),
+						EXTRA, List.of(price(1, EXTRA, 4500))));
+		collector(false).collect();
+		jdbc.update("insert into price (entp_id, good_id, inspect_day, price) values (1, ?, ?, 4400)", EXTRA, OTHER_DAY);
+		clearInvocations(client);
+
+		givenApi(regions(), List.of(store(1, SEOUL)), List.of(product(RAMEN), product(SOUP)),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1300)), SOUP, List.of(price(1, SOUP, 2000))));
+		CollectionReport report = collector(false).collect();
+
+		assertThat(productRepository.existsById(EXTRA)).as("사라진 상품의 상품 레코드는 유지").isTrue();
+		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1300", "1-1003-2000");
+		assertThat(pricesOf(OTHER_DAY)).containsExactly("1-553-4400");
+		verify(client, never()).fetchPrices(DAY, EXTRA);
+		assertThat(report.missingProducts()).containsExactly(Map.entry(EXTRA, 1L));
+		assertThat(report.warnings()).anyMatch(w -> w.contains("응답에 없는 기존 상품") && w.contains("553"));
 	}
 
 	@Test
@@ -185,17 +257,20 @@ class DataCollectorTest {
 	}
 
 	@Test
-	void 저장_중_DB_오류가_나면_기존_가격_삭제까지_롤백된다() {
+	void 저장_중_DB_오류가_나면_조사일_전체_가격_삭제까지_롤백된다() {
 		givenApi(regions(), List.of(store(1, SEOUL)), products(),
-				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980)),
+						EXTRA, List.of(price(1, EXTRA, 4500))));
 		collector(false).collect();
 
-		givenApi(regions(), List.of(store(1, SEOUL)), products(),
+		givenApi(regions(), List.of(store(1, SEOUL, "이름변경마트")), List.of(product(RAMEN), product(SOUP)),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1300)), SOUP, List.of(price(1, SOUP, 0))));
 
 		assertThatThrownBy(() -> collector(false).collect()).isNotInstanceOf(DataCollectionException.class);
 
-		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1280", "1-1003-1980");
+		assertThat(pricesOf(DAY)).as("사라진 상품의 가격까지 삭제 전 상태로 롤백")
+				.containsExactlyInAnyOrder("1-1000-1280", "1-1003-1980", "1-553-4500");
+		assertThat(storeRepository.findById(1L).orElseThrow().getName()).isEqualTo("테스트마트");
 	}
 
 	@Test
@@ -215,11 +290,28 @@ class DataCollectorTest {
 	}
 
 	@Test
-	void V2_대상_상품이_상품_응답에_없으면_실패한다() {
-		givenApi(regions(), List.of(store(1, SEOUL)), List.of(product(RAMEN)),
+	void V2_기준_상품이_상품_응답에_없으면_실패한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), List.of(product(RAMEN), product(EXTRA)),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
 
 		assertValidationFailure("V2", "1003");
+	}
+
+	@Test
+	void V2_상품_응답의_상품_ID가_중복되면_실패한다() {
+		givenApi(regions(), List.of(store(1, SEOUL)), List.of(product(RAMEN), product(SOUP), product(EXTRA), product(EXTRA)),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+
+		assertValidationFailure("V2", "553");
+	}
+
+	@Test
+	void 지역_판매점_상품_응답_검증에_실패하면_가격_API를_호출하지_않는다() {
+		givenApi(regions(), List.of(store(1, SEOUL), store(1, GYEONGGI)), products(),
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+
+		assertValidationFailure("V3", "1");
+		verify(client, never()).fetchPrices(any(), anyLong());
 	}
 
 	@Test
@@ -231,7 +323,7 @@ class DataCollectorTest {
 	}
 
 	@Test
-	void V4_대상_상품의_기준_조사일_가격이_0건이면_실패한다() {
+	void V4_기준_상품의_기준_조사일_가격이_0건이면_실패한다() {
 		givenApi(regions(), List.of(store(1, SEOUL)), products(),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of()));
 
@@ -267,6 +359,19 @@ class DataCollectorTest {
 				.isInstanceOf(DataCollectionException.class)
 				.hasMessageContaining("1000");
 		assertThat(pricesOf(DAY)).hasSize(10);
+	}
+
+	@Test
+	void 기준_외_상품의_가격이_줄어도_상품별_급감_안전장치에_걸리지_않는다() {
+		givenApi(regions(), stores(5), products(),
+				Map.of(RAMEN, prices(5, RAMEN), SOUP, prices(5, SOUP), EXTRA, prices(5, EXTRA)));
+		collector(false).collect();
+
+		givenApi(regions(), stores(5), products(),
+				Map.of(RAMEN, prices(5, RAMEN), SOUP, prices(5, SOUP), EXTRA, prices(1, EXTRA)));
+		collector(false).collect();
+
+		assertThat(pricesOf(DAY)).hasSize(11);
 	}
 
 	@Test
@@ -403,7 +508,30 @@ class DataCollectorTest {
 		CollectionReport report = collector(false).collect();
 
 		assertThat(storeRepository.count()).isEqualTo(100);
-		assertThat(report.warnings()).anyMatch(w -> w.contains("참고 신호") && w.contains("100"));
+		assertThat(report.warnings()).anyMatch(w -> w.contains("참고 신호") && w.contains("판매점") && w.contains("100"));
+	}
+
+	@Test
+	void 상품_응답_건수가_딱_떨어지면_참고_신호를_남긴다() {
+		List<ProductRow> products = new ArrayList<>(List.of(product(RAMEN), product(SOUP)));
+		for (long id = 1; id <= 98; id++) {
+			products.add(product(10_000 + id));
+		}
+		givenApi(regions(), List.of(store(1, SEOUL)), products,
+				Map.of(RAMEN, List.of(price(1, RAMEN, 1280)), SOUP, List.of(price(1, SOUP, 1980))));
+
+		CollectionReport report = collector(false).collect();
+
+		assertThat(report.warnings()).anyMatch(w -> w.contains("참고 신호") && w.contains("상품") && w.contains("100"));
+	}
+
+	@Test
+	void 상품별_가격_건수가_딱_떨어져도_참고_신호를_남기지_않는다() {
+		givenApi(regions(), stores(101), products(), Map.of(RAMEN, prices(100, RAMEN), SOUP, prices(3, SOUP)));
+
+		CollectionReport report = collector(false).collect();
+
+		assertThat(report.warnings()).noneMatch(w -> w.contains("참고 신호"));
 	}
 
 	private DataCollector collector(boolean allowShrink) {
@@ -456,7 +584,7 @@ class DataCollectorTest {
 	}
 
 	private static List<ProductRow> products() {
-		return List.of(product(RAMEN), product(SOUP), product(NOT_TARGET));
+		return List.of(product(RAMEN), product(SOUP), product(EXTRA));
 	}
 
 	private static ProductRow product(long goodId) {
@@ -511,6 +639,7 @@ class DataCollectorTest {
 	}
 
 	private void cleanTables() {
+		jdbc.update("delete from collection_run");
 		jdbc.update("delete from cart_item");
 		jdbc.update("delete from member");
 		jdbc.update("delete from price");
