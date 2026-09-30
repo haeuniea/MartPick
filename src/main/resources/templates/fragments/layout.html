@@ -16,9 +16,15 @@
 		</a>
 		<nav class="site-nav" aria-label="주요 메뉴">
 			<a th:href="@{/products}">상품 찾기</a>
+			<a th:href="@{/cart}">장바구니</a>
 		</nav>
 	</div>
 </header>
+
+<div class="alerts" th:fragment="alerts" th:if="${message != null or error != null}">
+	<p class="alert alert--success" role="status" th:if="${message != null}" th:text="${message}">담았습니다.</p>
+	<p class="alert alert--error" role="alert" th:if="${error != null}" th:text="${error}">오류</p>
+</div>
 
 <section class="survey-notice" th:fragment="surveyNotice(inspectDay)" aria-label="가격 기준 안내">
 	<div class="container survey-notice__inner">

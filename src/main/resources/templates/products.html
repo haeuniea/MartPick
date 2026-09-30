@@ -6,10 +6,15 @@
 <section th:replace="~{fragments/layout :: surveyNotice(${inspectDay})}"></section>
 
 <main class="container page">
-	<div class="page-heading">
-		<h1>상품 찾기</h1>
-		<p class="page-heading__lead">담은 상품으로 지역 판매점의 장바구니 가격을 비교합니다.</p>
+	<div class="page-heading page-heading--split">
+		<div>
+			<h1>상품 찾기</h1>
+			<p class="page-heading__lead">담은 상품으로 지역 판매점의 장바구니 가격을 비교합니다.</p>
+		</div>
+		<a class="button button--outline" th:href="@{/cart}">장바구니 보기</a>
 	</div>
+
+	<div th:replace="~{fragments/layout :: alerts}"></div>
 
 	<form class="search" th:action="@{/products}" method="get" role="search">
 		<label class="visually-hidden" for="keyword">상품명 검색</label>
@@ -36,8 +41,13 @@
 				<span class="product-card__hole" aria-hidden="true"></span>
 				<p class="product-card__name" th:text="${product.name}">팔도 왕뚜껑(110g)</p>
 				<p class="product-card__spec" th:if="${product.spec != null}">
-					규격 <span th:text="${product.spec}">1 EA</span>
+					규격 <span th:text="${product.spec}">110 G</span>
 				</p>
+				<form class="product-card__add" th:action="@{/cart/items}" method="post">
+					<input type="hidden" name="goodId" th:value="${product.goodId}">
+					<input type="hidden" name="keyword" th:value="${keyword}">
+					<button class="button button--accent button--small" type="submit">담기</button>
+				</form>
 			</li>
 		</ul>
 	</th:block>

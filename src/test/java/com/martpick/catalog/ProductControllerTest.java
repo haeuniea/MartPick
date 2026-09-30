@@ -77,6 +77,29 @@ class ProductControllerTest {
 	}
 
 	@Test
+	void 상품마다_CSRF_토큰과_검색어를_포함한_담기_폼과_장바구니_보기_링크를_표시한다() throws Exception {
+		given(productService.search("왕뚜껑")).willReturn(List.of(new ProductView(1000L, "팔도 왕뚜껑(110g)", "110 G")));
+
+		mockMvc.perform(get("/products").param("keyword", "왕뚜껑"))
+				.andExpect(content().string(containsString("action=\"/cart/items\"")))
+				.andExpect(content().string(containsString("name=\"_csrf\"")))
+				.andExpect(content().string(containsString("name=\"goodId\" value=\"1000\"")))
+				.andExpect(content().string(containsString("name=\"keyword\" value=\"왕뚜껑\"")))
+				.andExpect(content().string(containsString("href=\"/cart\"")))
+				.andExpect(content().string(containsString("장바구니 보기")));
+	}
+
+	@Test
+	void 담기_결과_안내를_표시한다() throws Exception {
+		given(productService.search(null)).willReturn(List.of());
+
+		mockMvc.perform(get("/products").flashAttr("message", "햇반(210g)을(를) 장바구니에 담았습니다."))
+				.andExpect(content().string(containsString("햇반(210g)을(를) 장바구니에 담았습니다.")));
+		mockMvc.perform(get("/products").flashAttr("error", "상품당 최대 99개까지 담을 수 있습니다."))
+				.andExpect(content().string(containsString("상품당 최대 99개까지 담을 수 있습니다.")));
+	}
+
+	@Test
 	void 검색어의_HTML은_이스케이프한다() throws Exception {
 		given(productService.search("<script>alert(1)</script>")).willReturn(List.of());
 
