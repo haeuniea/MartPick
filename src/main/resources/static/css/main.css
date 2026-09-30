@@ -648,6 +648,46 @@ input:focus-visible {
 	font-variant-numeric: tabular-nums;
 }
 
+/* 상품 목록 페이지 이동 */
+.result-count__page {
+	margin-left: 4px;
+	font-variant-numeric: tabular-nums;
+}
+
+.pagination {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 6px;
+	margin-top: 28px;
+}
+
+.pagination a,
+.pagination__current {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 40px;
+	height: 40px;
+	padding: 0 12px;
+	border: 2px solid var(--line);
+	border-radius: 8px;
+	background: var(--card);
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	text-decoration: none;
+}
+
+.pagination a:hover {
+	border-color: var(--ink);
+}
+
+.pagination__current {
+	border-color: var(--ink);
+	background: var(--ink);
+	color: var(--paper);
+}
+
 .empty {
 	margin-top: 28px;
 	padding: 28px 20px;

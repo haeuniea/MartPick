@@ -22,22 +22,24 @@
 			placeholder="상품명으로 찾기 (예: 햇반)" maxlength="50">
 		<button class="button button--ink" type="submit">검색</button>
 	</form>
-	<p class="hint">검색 가능한 상품은 수집된 일부 상품으로 제한됩니다.</p>
+	<p class="hint">기준 조사일에 가격 데이터가 없는 상품도 있습니다. 이런 상품은 비교 결과에서 가격 정보 없음으로 표시될 수 있습니다.</p>
 
-	<th:block th:if="${#lists.isEmpty(products)}">
+	<th:block th:if="${#lists.isEmpty(result.products)}">
 		<div class="empty">
 			<p class="empty__title">검색 결과가 없습니다.</p>
 			<p>다른 상품명으로 검색하거나 <a th:href="@{/products}">전체 상품</a>을 확인해 주세요.</p>
 		</div>
 	</th:block>
 
-	<th:block th:unless="${#lists.isEmpty(products)}">
+	<th:block th:unless="${#lists.isEmpty(result.products)}">
 		<p class="result-count">
 			<span th:if="${keyword != ''}">‘<span th:text="${keyword}">햇반</span>’ 검색 결과 </span>
-			<strong th:text="${#lists.size(products)}">7</strong>개 상품
+			총 <strong th:text="${result.totalCount}">604</strong>개
+			<span class="result-count__page" th:if="${result.totalPages > 1}"
+				th:text="|· ${result.page} / ${result.totalPages} 페이지|">· 1 / 21 페이지</span>
 		</p>
 		<ul class="product-grid">
-			<li class="product-card" th:each="product, stat : ${products}" th:style="'--i:' + ${stat.index}">
+			<li class="product-card" th:each="product, stat : ${result.products}" th:style="'--i:' + ${stat.index % 12}">
 				<span class="product-card__hole" aria-hidden="true"></span>
 				<p class="product-card__name" th:text="${product.name}">팔도 왕뚜껑(110g)</p>
 				<p class="product-card__spec" th:if="${product.spec != null}">
@@ -46,10 +48,24 @@
 				<form class="product-card__add" th:action="@{/cart/items}" method="post">
 					<input type="hidden" name="goodId" th:value="${product.goodId}">
 					<input type="hidden" name="keyword" th:value="${keyword}">
+					<input type="hidden" name="page" th:value="${result.page}">
 					<button class="button button--accent button--small" type="submit">담기</button>
 				</form>
 			</li>
 		</ul>
+
+		<nav class="pagination" aria-label="상품 목록 페이지" th:if="${result.totalPages > 1}">
+			<a class="pagination__step" th:if="${result.hasPrevious()}"
+				th:href="${keyword == ''} ? @{/products(page=${result.page - 1})} : @{/products(keyword=${keyword},page=${result.page - 1})}">이전</a>
+			<th:block th:each="number : ${#numbers.sequence(result.startPage(), result.endPage())}">
+				<span class="pagination__current" th:if="${number == result.page}" aria-current="page"
+					th:text="${number}">2</span>
+				<a th:unless="${number == result.page}" th:text="${number}"
+					th:href="${keyword == ''} ? @{/products(page=${number})} : @{/products(keyword=${keyword},page=${number})}">1</a>
+			</th:block>
+			<a class="pagination__step" th:if="${result.hasNext()}"
+				th:href="${keyword == ''} ? @{/products(page=${result.page + 1})} : @{/products(keyword=${keyword},page=${result.page + 1})}">다음</a>
+		</nav>
 	</th:block>
 </main>
 

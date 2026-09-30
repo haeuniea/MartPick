@@ -1,5 +1,6 @@
 package com.martpick.cart;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -17,6 +18,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -25,6 +28,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import com.martpick.compare.ComparisonService;
 import com.martpick.compare.RegionOption;
@@ -51,6 +56,54 @@ class CartControllerTest {
 				.andExpect(status().is3xxRedirection())
 				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91"))
 				.andExpect(flash().attribute("message", "팔도 왕뚜껑(110g)을(를) 장바구니에 담았습니다."));
+	}
+
+	@Test
+	void 담기_후_검색어와_페이지_번호를_유지한다() throws Exception {
+		given(guestCartService.add(1000L)).willReturn("팔도 왕뚜껑(110g)");
+
+		mockMvc.perform(post("/cart/items").with(csrf())
+						.param("goodId", "1000").param("keyword", "왕뚜껑").param("page", "3"))
+				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91&page=3"));
+		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("page", "2"))
+				.andExpect(redirectedUrl("/products?page=2"));
+	}
+
+	@Test
+	void 특수문자와_한글이_포함된_검색어도_담기_후_그대로_복원된다() throws Exception {
+		given(guestCartService.add(1000L)).willReturn("팔도 왕뚜껑(110g)");
+
+		for (String keyword : new String[] {"A&B", "1+1", "#햇반", "우유 100%", "a=b?c/d", "라면 & 김치+1#"}) {
+			String redirectedUrl = mockMvc.perform(post("/cart/items").with(csrf())
+							.param("goodId", "1000").param("keyword", keyword).param("page", "2"))
+					.andExpect(status().is3xxRedirection())
+					.andReturn().getResponse().getRedirectedUrl();
+
+			MultiValueMap<String, String> query = UriComponentsBuilder.fromUriString(redirectedUrl).build(true).getQueryParams();
+			assertThat(URLDecoder.decode(query.getFirst("keyword"), StandardCharsets.UTF_8)).as(keyword).isEqualTo(keyword);
+			assertThat(query.get("page")).as(keyword).containsExactly("2");
+			assertThat(redirectedUrl).as(keyword).doesNotContain("#");
+		}
+	}
+
+	@Test
+	void 담기를_거부해도_검색어와_페이지_번호를_유지한다() throws Exception {
+		given(guestCartService.add(1000L)).willThrow(new InvalidCartRequestException("상품당 최대 99개까지 담을 수 있습니다."));
+
+		mockMvc.perform(post("/cart/items").with(csrf())
+						.param("goodId", "1000").param("keyword", "왕뚜껑").param("page", "3"))
+				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91&page=3"))
+				.andExpect(flash().attribute("error", "상품당 최대 99개까지 담을 수 있습니다."));
+	}
+
+	@Test
+	void 잘못된_페이지_번호는_담기_후_이동_주소에_붙이지_않는다() throws Exception {
+		given(guestCartService.add(1000L)).willReturn("팔도 왕뚜껑(110g)");
+
+		for (String page : new String[] {"abc", "0", "-1", "", "1.5"}) {
+			mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("page", page))
+					.andExpect(redirectedUrl("/products"));
+		}
 	}
 
 	@Test

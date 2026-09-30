@@ -21,11 +21,23 @@ public class ProductController {
 		return "redirect:/products";
 	}
 
+	/**
+	 * 페이지 번호가 음수·0·숫자가 아니면 첫 페이지를 요청한다 (PROJECT_SPEC 2-1).
+	 */
 	@GetMapping("/products")
-	public String products(@RequestParam(required = false) String keyword, Model model) {
-		model.addAttribute("products", productService.search(keyword));
+	public String products(@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String page, Model model) {
+		model.addAttribute("result", productService.search(keyword, parsePage(page)));
 		model.addAttribute("keyword", keyword == null ? "" : keyword.strip());
 		model.addAttribute("inspectDay", properties.inspectDay());
 		return "products";
+	}
+
+	private static int parsePage(String page) {
+		if (page == null || !page.matches("\\d+")) {
+			return 1;
+		}
+		long value = page.length() > 10 ? Long.MAX_VALUE : Long.parseLong(page);
+		return (int) Math.max(1, Math.min(value, Integer.MAX_VALUE));
 	}
 }
