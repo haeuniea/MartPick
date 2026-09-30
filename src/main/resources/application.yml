@@ -1,6 +1,9 @@
 spring:
   application:
     name: martpick
+  # 4단계(비회원 기능): 자동 생성 사용자와 generated password를 만들지 않음. 5단계 인증 구현 시 다시 조정
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
     url: jdbc:postgresql://${MARTPICK_DB_HOST:localhost}:${MARTPICK_DB_PORT:5432}/${MARTPICK_DB_NAME:martpick}
     username: ${MARTPICK_DB_USER:martpick}

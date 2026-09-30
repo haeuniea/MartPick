@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title th:text="${title} + ' · 마트픽'">마트픽</title>
+	<link rel="stylesheet" th:href="@{/css/main.css}">
+</head>
+<body>
+
+<header class="site-header" th:fragment="header">
+	<div class="container site-header__inner">
+		<a class="brand" th:href="@{/products}">
+			<span class="brand__mark" aria-hidden="true">₩</span>
+			<span class="brand__name">마트픽</span>
+		</a>
+		<nav class="site-nav" aria-label="주요 메뉴">
+			<a th:href="@{/products}">상품 찾기</a>
+		</nav>
+	</div>
+</header>
+
+<section class="survey-notice" th:fragment="surveyNotice(inspectDay)" aria-label="가격 기준 안내">
+	<div class="container survey-notice__inner">
+		<p class="survey-notice__day">
+			<strong th:text="${#temporals.format(inspectDay, 'yyyy년 M월 d일')}">2026년 9월 25일</strong> 조사 가격 기준
+		</p>
+		<p class="survey-notice__caution">한국소비자원 생필품 가격 정보의 조사 가격이며, 실시간 판매 가격·재고를 보장하지 않습니다.</p>
+	</div>
+</section>
+
+<footer class="site-footer" th:fragment="footer">
+	<div class="container">
+		<p>가격 출처: 한국소비자원 생필품 가격 정보 (공공데이터포털)</p>
+	</div>
+</footer>
+
+</body>
+</html>

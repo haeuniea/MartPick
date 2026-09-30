@@ -1,0 +1,342 @@
+:root {
+	--paper: #f5f0e6;
+	--paper-deep: #ebe3d3;
+	--card: #fffdf8;
+	--ink: #1f1b16;
+	--ink-soft: #5c544a;
+	--line: #d8cdb8;
+	--accent: #c8412b;
+	--accent-soft: #fbe3dc;
+	--notice: #fff4c7;
+	--radius: 10px;
+	--font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+	background-color: var(--paper);
+	background-image: radial-gradient(rgba(31, 27, 22, 0.05) 1px, transparent 1px);
+	background-size: 18px 18px;
+	color: var(--ink);
+	font-family: var(--font);
+	font-size: 16px;
+	line-height: 1.6;
+	word-break: keep-all;
+	overflow-wrap: anywhere;
+}
+
+a {
+	color: inherit;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+	outline: 3px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.container {
+	width: 100%;
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 0 16px;
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+/* 머리글 */
+.site-header {
+	background: var(--ink);
+	color: var(--paper);
+}
+
+.site-header__inner {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	min-height: 60px;
+}
+
+.brand {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	text-decoration: none;
+	font-weight: 800;
+	font-size: 1.25rem;
+	letter-spacing: -0.02em;
+}
+
+.brand__mark {
+	display: inline-grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	background: var(--accent);
+	color: #fff;
+	font-size: 1rem;
+	transform: rotate(-8deg);
+}
+
+.site-nav {
+	display: flex;
+	gap: 18px;
+}
+
+.site-nav a {
+	text-decoration: none;
+	font-weight: 600;
+	opacity: 0.85;
+}
+
+.site-nav a:hover {
+	opacity: 1;
+	text-decoration: underline;
+	text-underline-offset: 4px;
+}
+
+/* 조사 기준일 안내 (R9) */
+.survey-notice {
+	background: var(--notice);
+	border-bottom: 1px dashed var(--line);
+}
+
+.survey-notice__inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 16px;
+	padding-top: 10px;
+	padding-bottom: 10px;
+	font-size: 0.9rem;
+}
+
+.survey-notice p {
+	margin: 0;
+}
+
+.survey-notice__day strong {
+	font-variant-numeric: tabular-nums;
+}
+
+.survey-notice__caution {
+	color: var(--ink-soft);
+}
+
+/* 본문 */
+.page {
+	flex: 1;
+	padding-top: 32px;
+	padding-bottom: 48px;
+}
+
+.page-heading h1 {
+	margin: 0;
+	font-size: clamp(1.75rem, 5vw, 2.4rem);
+	font-weight: 900;
+	letter-spacing: -0.04em;
+	line-height: 1.2;
+}
+
+.page-heading__lead {
+	margin: 6px 0 0;
+	color: var(--ink-soft);
+}
+
+.search {
+	display: flex;
+	gap: 8px;
+	margin-top: 24px;
+}
+
+.search__input {
+	flex: 1;
+	min-width: 0;
+	height: 48px;
+	padding: 0 14px;
+	border: 2px solid var(--ink);
+	border-radius: var(--radius);
+	background: var(--card);
+	color: var(--ink);
+	font: inherit;
+}
+
+.button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 48px;
+	padding: 0 20px;
+	border: 2px solid var(--ink);
+	border-radius: var(--radius);
+	font: inherit;
+	font-weight: 700;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.button--ink {
+	background: var(--ink);
+	color: var(--paper);
+	box-shadow: 3px 3px 0 var(--accent);
+}
+
+.button--ink:hover {
+	transform: translate(-1px, -1px);
+	box-shadow: 4px 4px 0 var(--accent);
+}
+
+.button--ink:active {
+	transform: translate(2px, 2px);
+	box-shadow: 1px 1px 0 var(--accent);
+}
+
+.hint {
+	margin: 10px 0 0;
+	color: var(--ink-soft);
+	font-size: 0.9rem;
+}
+
+.result-count {
+	margin: 28px 0 12px;
+	color: var(--ink-soft);
+}
+
+.result-count strong {
+	color: var(--ink);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 상품 카드: 가격표 모양 */
+.product-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	gap: 14px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.product-card {
+	position: relative;
+	padding: 18px 18px 18px 40px;
+	border: 1px solid var(--line);
+	border-left: 6px solid var(--accent);
+	border-radius: 4px var(--radius) var(--radius) 4px;
+	background: var(--card);
+	box-shadow: 0 1px 0 var(--line), 0 8px 18px -14px rgba(31, 27, 22, 0.5);
+	animation: card-in 0.35s ease both;
+	animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+.product-card__hole {
+	position: absolute;
+	top: 50%;
+	left: 14px;
+	width: 12px;
+	height: 12px;
+	margin-top: -6px;
+	border: 2px solid var(--line);
+	border-radius: 50%;
+	background: var(--paper);
+}
+
+.product-card__name {
+	margin: 0;
+	font-weight: 700;
+	line-height: 1.4;
+}
+
+.product-card__spec {
+	margin: 4px 0 0;
+	color: var(--ink-soft);
+	font-size: 0.875rem;
+}
+
+.empty {
+	margin-top: 28px;
+	padding: 28px 20px;
+	border: 2px dashed var(--line);
+	border-radius: var(--radius);
+	background: var(--card);
+	text-align: center;
+}
+
+.empty p {
+	margin: 0;
+}
+
+.empty__title {
+	margin-bottom: 6px !important;
+	font-weight: 800;
+	font-size: 1.1rem;
+}
+
+/* 바닥글 */
+.site-footer {
+	border-top: 1px solid var(--line);
+	background: var(--paper-deep);
+	color: var(--ink-soft);
+	font-size: 0.85rem;
+}
+
+.site-footer p {
+	margin: 0;
+	padding: 16px 0;
+}
+
+@keyframes card-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.product-card {
+		animation: none;
+	}
+
+	.button {
+		transition: none;
+	}
+}
+
+@media (max-width: 480px) {
+	.page {
+		padding-top: 24px;
+	}
+
+	.button {
+		padding: 0 16px;
+	}
+}
