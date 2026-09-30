@@ -1,6 +1,7 @@
 package com.martpick.collect;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,9 +9,11 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -39,7 +42,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 공공데이터 API 상품 응답의 전체 상품을 대상으로 모두 조회·검증한 뒤 한 트랜잭션으로 저장한다 (PROJECT_SPEC 4-1-1).
  * API 호출이나 검증이 하나라도 실패하면 DB를 변경하지 않는다.
- * 기준 상품(baselineGoodIds)은 수집 범위가 아니라 필수 검증(V2, V4)과 회귀 검증용 급감 안전장치에만 쓴다.
+ * 기준 상품(baselineGoodIds)은 수집 범위가 아니라 필수 검증(V2, V4)과 회귀 검증용 급감 안전장치(G1)에만 쓴다.
+ * 성공한 수집은 가격 교체와 같은 트랜잭션에서 성공 이력(collection_run)으로 남기고, 다음 수집의 G2와 이력 정합성 확인에 쓴다.
+ * 같은 조사일의 수집은 동시에 실행하지 않는다는 운영 전제를 둔다.
  */
 @Slf4j
 @Service
@@ -51,10 +56,10 @@ public class DataCollector {
 	private static final String HEADQUARTERS_PATTERN = "(본사)";
 
 	/**
-	 * 가격 급감 안전장치 비율. 데이터 완전성을 증명하는 기준이 아니라,
-	 * 부분 응답으로 기존 가격을 잘못 지우는 일을 막기 위한 임시 안전장치다.
+	 * 가격 급감 안전장치(G1·G2) 기준 비율(%). 새 건수가 기존의 이 비율 미만이면 중단한다.
+	 * 데이터 완전성을 증명하는 기준이 아니라, 부분 응답으로 기존 가격을 잘못 지우는 일을 막기 위한 임시 안전장치다.
 	 */
-	private static final double SHRINK_GUARD_RATIO = 0.8;
+	private static final int SHRINK_GUARD_PERCENT = 80;
 
 	/** 수집 보고의 상품별 가격 건수 분포 구간 크기 */
 	private static final int DISTRIBUTION_BUCKET = 100;
@@ -65,6 +70,7 @@ public class DataCollector {
 	private final StoreRepository storeRepository;
 	private final ProductRepository productRepository;
 	private final PriceRepository priceRepository;
+	private final CollectionRunRepository collectionRunRepository;
 	private final TransactionTemplate transactionTemplate;
 
 	public CollectionReport collect() {
@@ -72,6 +78,10 @@ public class DataCollector {
 		MartPickProperties.Collect config = properties.collect();
 		List<Long> baselineIds = config.baselineGoodIds();
 		Set<Long> excludedIds = Set.copyOf(config.excludedStoreIds());
+
+		// API 호출 전에 마지막 성공 이후 DB가 바뀌지 않았는지 확인해 호출 한도를 낭비하지 않는다.
+		collectionRunRepository.findFirstByInspectDayOrderByCompletedAtDescIdDesc(inspectDay)
+				.ifPresent(run -> verifyHistoryMatchesDb(inspectDay, run));
 
 		Map<String, Integer> retries = new LinkedHashMap<>();
 		List<RegionRow> regionRows = withRetry("지역 코드", client::fetchRegions, retries);
@@ -97,9 +107,18 @@ public class DataCollector {
 		warnRoundCounts(storeRows, productRows, warnings);
 		warnHeadquartersMismatch(storeRows, excludedIds, warnings);
 
+		int priceCount = priceRows.values().stream().mapToInt(List::size).sum();
+		int pricedProductCount = (int) priceRows.values().stream().filter(rows -> !rows.isEmpty()).count();
 		Map<Long, Long> missingProducts = new LinkedHashMap<>();
-		transactionTemplate.executeWithoutResult(status -> {
+		AtomicReference<CollectionRun> previousRun = new AtomicReference<>();
+		// 가격 교체, 저장 후 건수 검증, 성공 이력 저장을 한 트랜잭션으로 처리한다. 어느 단계에서든 실패하면 모두 롤백된다.
+		CollectionRun run = transactionTemplate.execute(status -> {
+			Optional<CollectionRun> previous = collectionRunRepository.findFirstByInspectDayOrderByCompletedAtDescIdDesc(inspectDay);
+			previous.ifPresent(latest -> verifyHistoryMatchesDb(inspectDay, latest));
+			previous.ifPresent(previousRun::set);
+
 			guardShrink(inspectDay, baselineIds, priceRows, config.allowShrink(), warnings);
+			guardTotalShrink(previous, priceCount, pricedProductCount, config.allowShrink(), warnings);
 			warnMissingStores(storeRows, warnings);
 			missingProducts.putAll(findMissingProducts(inspectDay, productRows));
 			if (!missingProducts.isEmpty()) {
@@ -108,10 +127,13 @@ public class DataCollector {
 						+ missingProducts.keySet());
 			}
 			save(inspectDay, sidoRows, storeRows, productRows, priceRows, excludedIds);
+			verifySaved(inspectDay, priceCount, pricedProductCount);
+			return collectionRunRepository.saveAndFlush(new CollectionRun(inspectDay, productRows.size(),
+					pricedProductCount, priceCount, Instant.now()));
 		});
 
 		CollectionReport report = report(inspectDay, sidoRows, storeRows, excludedIds, productRows, priceRows,
-				baselineIds, missingProducts, retries, warnings);
+				baselineIds, missingProducts, previousRun.get(), run, retries, warnings);
 		log.info("공공데이터 수집 완료: {}", report);
 		return report;
 	}
@@ -249,22 +271,81 @@ public class DataCollector {
 	}
 
 	/**
-	 * 기준 상품별 급감 안전장치(G1). 기준 상품 외의 상품에는 적용하지 않는다.
+	 * 최신 성공 이력의 건수와 DB의 실제 기준 조사일 건수가 같은지 확인한다.
+	 * 다르면 마지막 성공 이후 DB가 바뀐 것이므로 중단한다. allow-shrink로도 우회하지 않는다.
+	 */
+	private void verifyHistoryMatchesDb(LocalDate inspectDay, CollectionRun run) {
+		long dbPriceCount = priceRepository.countByInspectDay(inspectDay);
+		long dbPricedProductCount = priceRepository.countPricedProductsByInspectDay(inspectDay);
+		if (dbPriceCount != run.getPriceCount() || dbPricedProductCount != run.getPricedProductCount()) {
+			throw new DataCollectionException("이력과 DB 불일치: 최신 성공 이력 #" + run.getId() + "(전체 가격 "
+					+ run.getPriceCount() + "건, 가격 보유 상품 " + run.getPricedProductCount() + "개)과 DB의 기준 조사일 값(전체 가격 "
+					+ dbPriceCount + "건, 가격 보유 상품 " + dbPricedProductCount + "개)이 다릅니다. 원인을 확인한 뒤 다시 실행하세요.");
+		}
+	}
+
+	/**
+	 * 기준 상품별 급감 안전장치(G1, 회귀 검증용 보조 장치). 기준 상품 외의 상품에는 적용하지 않는다.
 	 */
 	private void guardShrink(LocalDate inspectDay, List<Long> baselineIds, Map<Long, List<PriceRow>> priceRows,
 			boolean allowShrink, List<String> warnings) {
 		for (Long goodId : baselineIds) {
 			int newCount = priceRows.get(goodId).size();
 			long existing = priceRepository.countByInspectDayAndProductGoodId(inspectDay, goodId);
-			if (existing == 0 || newCount >= existing * SHRINK_GUARD_RATIO) {
+			if (!isShrunk(newCount, existing)) {
 				continue;
 			}
-			String message = "기준 상품 " + goodId + " 가격이 기존 " + existing + "건에서 " + newCount + "건으로 "
-					+ (int) (SHRINK_GUARD_RATIO * 100) + "% 미만으로 줄었습니다 (임시 안전장치, 완전성 증명 기준 아님)";
-			if (!allowShrink) {
-				throw new DataCollectionException(message + ". 의도한 감소라면 martpick.collect.allow-shrink=true로 실행하세요.");
-			}
-			warnings.add(message + ". allow-shrink 옵션으로 저장을 허용했습니다.");
+			String message = "G1: 기준 상품 " + goodId + " 가격이 기존 " + existing + "건에서 " + newCount + "건으로 "
+					+ SHRINK_GUARD_PERCENT + "% 미만으로 줄었습니다 (임시 안전장치, 완전성 증명 기준 아님)";
+			rejectOrWarn(message, allowShrink, warnings);
+		}
+	}
+
+	/**
+	 * 전체 건수 급감 안전장치(G2, 주요 안전장치). 같은 조사일의 이전 성공 이력이 있을 때만 적용한다.
+	 */
+	private void guardTotalShrink(Optional<CollectionRun> previous, int priceCount, int pricedProductCount,
+			boolean allowShrink, List<String> warnings) {
+		if (previous.isEmpty()) {
+			warnings.add("이전 전체 수집 이력 없음: G2(전체 건수 급감 검사)를 적용하지 않았습니다.");
+			return;
+		}
+		CollectionRun run = previous.get();
+		List<String> shrunk = new ArrayList<>();
+		if (isShrunk(priceCount, run.getPriceCount())) {
+			shrunk.add("전체 가격 건수 " + run.getPriceCount() + "건 → " + priceCount + "건");
+		}
+		if (isShrunk(pricedProductCount, run.getPricedProductCount())) {
+			shrunk.add("가격 보유 상품 수 " + run.getPricedProductCount() + "개 → " + pricedProductCount + "개");
+		}
+		if (!shrunk.isEmpty()) {
+			rejectOrWarn("G2: 이전 성공 이력 #" + run.getId() + " 대비 " + SHRINK_GUARD_PERCENT + "% 미만으로 줄었습니다 ("
+					+ String.join(", ", shrunk) + ", 임시 안전장치, 완전성 증명 기준 아님)", allowShrink, warnings);
+		}
+	}
+
+	private static boolean isShrunk(long newCount, long previousCount) {
+		return newCount * 100 < previousCount * SHRINK_GUARD_PERCENT;
+	}
+
+	private static void rejectOrWarn(String message, boolean allowShrink, List<String> warnings) {
+		if (!allowShrink) {
+			throw new DataCollectionException(message + ". 의도한 감소라면 martpick.collect.allow-shrink=true로 실행하세요.");
+		}
+		warnings.add(message + ". allow-shrink 옵션으로 저장을 허용했습니다.");
+	}
+
+	/**
+	 * 저장 후 건수 검증: 검증을 통과한 응답이 빠짐없이 저장되었는지 확인한다.
+	 * 일치해도 API 응답이 완전하다는 뜻은 아니다. allow-shrink로도 우회하지 않는다.
+	 */
+	private void verifySaved(LocalDate inspectDay, int priceCount, int pricedProductCount) {
+		long savedPriceCount = priceRepository.countByInspectDay(inspectDay);
+		long savedPricedProductCount = priceRepository.countPricedProductsByInspectDay(inspectDay);
+		if (savedPriceCount != priceCount || savedPricedProductCount != pricedProductCount) {
+			throw new DataCollectionException("저장 후 건수 검증 실패: 응답(전체 가격 " + priceCount + "건, 가격 보유 상품 "
+					+ pricedProductCount + "개)과 저장 결과(전체 가격 " + savedPriceCount + "건, 가격 보유 상품 "
+					+ savedPricedProductCount + "개)가 다릅니다. 가격 교체와 이력 저장을 롤백합니다.");
 		}
 	}
 
@@ -312,16 +393,20 @@ public class DataCollector {
 
 	private CollectionReport report(LocalDate inspectDay, List<RegionRow> sidoRows, List<StoreRow> storeRows,
 			Set<Long> excludedIds, List<ProductRow> productRows, Map<Long, List<PriceRow>> priceRows,
-			List<Long> baselineIds, Map<Long, Long> missingProducts, Map<String, Integer> retries, List<String> warnings) {
+			List<Long> baselineIds, Map<Long, Long> missingProducts, CollectionRun previousRun, CollectionRun run,
+			Map<String, Integer> retries, List<String> warnings) {
 		int excludedCount = (int) storeRows.stream().filter(row -> exclusionReason(row, excludedIds) != null).count();
-		int pricedProductCount = (int) priceRows.values().stream().filter(rows -> !rows.isEmpty()).count();
-		int totalPriceCount = priceRows.values().stream().mapToInt(List::size).sum();
 		Map<Long, Integer> baselinePriceCounts = new LinkedHashMap<>();
 		baselineIds.forEach(id -> baselinePriceCounts.put(id, priceRows.get(id).size()));
+		boolean g2Applied = previousRun != null;
 		return new CollectionReport(inspectDay, sidoRows.size(), storeRows.size(), excludedCount,
-				productRows.size(), priceRows.size(), pricedProductCount, totalPriceCount,
+				productRows.size(), priceRows.size(), run.getPricedProductCount(), run.getPriceCount(),
 				Collections.unmodifiableMap(baselinePriceCounts), priceCountDistribution(priceRows),
 				Collections.unmodifiableMap(new LinkedHashMap<>(missingProducts)),
+				g2Applied, g2Applied ? previousRun.getId() : null,
+				g2Applied ? previousRun.getPriceCount() : null,
+				g2Applied ? previousRun.getPricedProductCount() : null,
+				run.getId(),
 				Collections.unmodifiableMap(new LinkedHashMap<>(retries)), List.copyOf(warnings));
 	}
 

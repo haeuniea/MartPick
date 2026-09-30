@@ -13,6 +13,14 @@ public interface PriceRepository extends JpaRepository<Price, Long> {
 
 	long countByInspectDayAndProductGoodId(LocalDate inspectDay, Long goodId);
 
+	long countByInspectDay(LocalDate inspectDay);
+
+	/**
+	 * 기준 조사일 가격이 1건 이상인 상품 수.
+	 */
+	@Query("select count(distinct p.product.goodId) from Price p where p.inspectDay = :inspectDay")
+	long countPricedProductsByInspectDay(@Param("inspectDay") LocalDate inspectDay);
+
 	/**
 	 * 기준 조사일의 가격을 모두 지운다. 전체 수집의 가격 교체에만 사용한다 (PROJECT_SPEC 4-1-1).
 	 */

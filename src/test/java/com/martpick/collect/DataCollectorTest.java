@@ -5,18 +5,24 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +81,9 @@ class DataCollectorTest {
 
 	@Autowired
 	private PriceRepository priceRepository;
+
+	@Autowired
+	private CollectionRunRepository collectionRunRepository;
 
 	@Autowired
 	private PlatformTransactionManager transactionManager;
@@ -219,7 +228,8 @@ class DataCollectorTest {
 
 		givenApi(regions(), List.of(store(1, SEOUL)), List.of(product(RAMEN), product(SOUP)),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1300)), SOUP, List.of(price(1, SOUP, 2000))));
-		CollectionReport report = collector(false).collect();
+		// 3개 중 1개 상품이 사라져 G2에 걸리므로 허용 옵션으로 저장 단계까지 진행시킨다.
+		CollectionReport report = collector(true).collect();
 
 		assertThat(productRepository.existsById(EXTRA)).as("사라진 상품의 상품 레코드는 유지").isTrue();
 		assertThat(pricesOf(DAY)).containsExactlyInAnyOrder("1-1000-1300", "1-1003-2000");
@@ -266,7 +276,8 @@ class DataCollectorTest {
 		givenApi(regions(), List.of(store(1, SEOUL, "이름변경마트")), List.of(product(RAMEN), product(SOUP)),
 				Map.of(RAMEN, List.of(price(1, RAMEN, 1300)), SOUP, List.of(price(1, SOUP, 0))));
 
-		assertThatThrownBy(() -> collector(false).collect()).isNotInstanceOf(DataCollectionException.class);
+		// 상품이 줄어 G2에 걸리지 않도록 허용 옵션으로 저장 단계까지 진행시킨다.
+		assertThatThrownBy(() -> collector(true).collect()).isNotInstanceOf(DataCollectionException.class);
 
 		assertThat(pricesOf(DAY)).as("사라진 상품의 가격까지 삭제 전 상태로 롤백")
 				.containsExactlyInAnyOrder("1-1000-1280", "1-1003-1980", "1-553-4500");
@@ -363,15 +374,16 @@ class DataCollectorTest {
 
 	@Test
 	void 기준_외_상품의_가격이_줄어도_상품별_급감_안전장치에_걸리지_않는다() {
-		givenApi(regions(), stores(5), products(),
-				Map.of(RAMEN, prices(5, RAMEN), SOUP, prices(5, SOUP), EXTRA, prices(5, EXTRA)));
+		// 전체 건수는 80% 이상(45 → 41)으로 유지해 G2와 무관하게 G1만 확인한다.
+		givenApi(regions(), stores(20), products(),
+				Map.of(RAMEN, prices(20, RAMEN), SOUP, prices(20, SOUP), EXTRA, prices(5, EXTRA)));
 		collector(false).collect();
 
-		givenApi(regions(), stores(5), products(),
-				Map.of(RAMEN, prices(5, RAMEN), SOUP, prices(5, SOUP), EXTRA, prices(1, EXTRA)));
+		givenApi(regions(), stores(20), products(),
+				Map.of(RAMEN, prices(20, RAMEN), SOUP, prices(20, SOUP), EXTRA, prices(1, EXTRA)));
 		collector(false).collect();
 
-		assertThat(pricesOf(DAY)).hasSize(11);
+		assertThat(pricesOf(DAY)).hasSize(41);
 	}
 
 	@Test
@@ -502,6 +514,177 @@ class DataCollectorTest {
 	}
 
 	@Test
+	void 첫_전체_수집은_G2를_생략하고_첫_성공_이력을_기록한다() {
+		givenG2Base();
+
+		CollectionReport report = collector(false).collect();
+
+		assertThat(report.g2Applied()).isFalse();
+		assertThat(report.previousRunId()).isNull();
+		assertThat(report.warnings()).anyMatch(w -> w.contains("이전 전체 수집 이력 없음") && w.contains("G2"));
+		assertThat(runs()).containsExactly(DAY + "|10|10|100");
+		assertThat(report.runId()).isEqualTo(latestRunId());
+	}
+
+	@Test
+	void 두_번째_전체_수집은_이전_성공_이력으로_G2를_적용하고_새_이력을_기록한다() {
+		givenG2Base();
+		long firstRunId = collector(false).collect().runId();
+
+		givenG2Base();
+		CollectionReport report = collector(false).collect();
+
+		assertThat(report.g2Applied()).isTrue();
+		assertThat(report.previousRunId()).isEqualTo(firstRunId);
+		assertThat(report.previousPriceCount()).isEqualTo(100);
+		assertThat(report.previousPricedProductCount()).isEqualTo(10);
+		assertThat(report.totalPriceCount()).isEqualTo(100);
+		assertThat(report.pricedProductCount()).isEqualTo(10);
+		assertThat(report.runId()).isNotEqualTo(firstRunId).isEqualTo(latestRunId());
+		assertThat(runs()).hasSize(2);
+	}
+
+	@Test
+	void G2_전체_가격_건수가_이전_이력의_80퍼센트_미만이면_중단하고_기존_가격과_이력을_유지한다() {
+		givenG2Base();
+		collector(false).collect();
+
+		givenG2Api(10, 10, 10, 10, 10, 10, 10, 5, 4, 0);
+
+		assertThatThrownBy(() -> collector(false).collect())
+				.isInstanceOf(DataCollectionException.class)
+				.hasMessageContaining("G2")
+				.hasMessageContaining("전체 가격 건수")
+				.hasMessageContaining("100")
+				.hasMessageContaining("79");
+		assertThat(pricesOf(DAY)).hasSize(100);
+		assertThat(runs()).hasSize(1);
+	}
+
+	@Test
+	void G2_가격_보유_상품_수가_이전_이력의_80퍼센트_미만이면_중단한다() {
+		givenG2Base();
+		collector(false).collect();
+
+		givenG2Api(10, 10, 12, 12, 12, 12, 12, 0, 0, 0);
+
+		assertThatThrownBy(() -> collector(false).collect())
+				.isInstanceOf(DataCollectionException.class)
+				.hasMessageContaining("G2")
+				.hasMessageContaining("가격 보유 상품 수")
+				.hasMessageContaining("10")
+				.hasMessageContaining("7");
+		assertThat(pricesOf(DAY)).hasSize(100);
+		assertThat(runs()).hasSize(1);
+	}
+
+	@Test
+	void G2_전체_가격_건수와_가격_보유_상품_수가_정확히_80퍼센트면_통과한다() {
+		givenG2Base();
+		collector(false).collect();
+
+		givenG2Api(10, 10, 10, 10, 10, 10, 10, 10, 0, 0);
+		CollectionReport report = collector(false).collect();
+
+		assertThat(report.totalPriceCount()).isEqualTo(80);
+		assertThat(report.pricedProductCount()).isEqualTo(8);
+		assertThat(pricesOf(DAY)).hasSize(80);
+		assertThat(runs()).hasSize(2);
+	}
+
+	@Test
+	void 허용_옵션은_G2를_경고로_낮춰_저장한다() {
+		givenG2Base();
+		collector(false).collect();
+
+		givenG2Api(10, 10, 10, 10, 10, 10, 10, 5, 4, 0);
+		CollectionReport report = collector(true).collect();
+
+		assertThat(pricesOf(DAY)).hasSize(79);
+		assertThat(runs()).hasSize(2);
+		assertThat(report.warnings()).anyMatch(w -> w.contains("G2") && w.contains("허용"));
+	}
+
+	@Test
+	void 이력과_DB_건수가_다르면_API를_호출하지_않고_중단하며_허용_옵션으로도_우회할_수_없다() {
+		givenG2Base();
+		collector(false).collect();
+		jdbc.update("delete from price where id = (select min(id) from price where inspect_day = ?)", DAY);
+		clearInvocations(client);
+
+		assertThatThrownBy(() -> collector(true).collect())
+				.isInstanceOf(DataCollectionException.class)
+				.hasMessageContaining("불일치")
+				.hasMessageContaining("100")
+				.hasMessageContaining("99");
+
+		verifyNoInteractions(client);
+		assertThat(pricesOf(DAY)).hasSize(99);
+		assertThat(runs()).hasSize(1);
+	}
+
+	@Test
+	void API_조회_중_DB가_바뀌면_트랜잭션_안에서_다시_확인해_중단한다() {
+		givenG2Base();
+		collector(false).collect();
+		givenG2Base();
+		when(client.fetchProducts()).thenAnswer(invocation -> {
+			jdbc.update("delete from price where id = (select min(id) from price where inspect_day = ?)", DAY);
+			return g2Products();
+		});
+
+		assertThatThrownBy(() -> collector(true).collect())
+				.isInstanceOf(DataCollectionException.class)
+				.hasMessageContaining("불일치");
+
+		assertThat(pricesOf(DAY)).as("가격 교체 없음").hasSize(99);
+		assertThat(runs()).hasSize(1);
+	}
+
+	@Test
+	void 저장_후_건수가_응답과_다르면_가격_교체와_이력_저장을_롤백하며_허용_옵션으로도_우회할_수_없다() {
+		givenG2Base();
+		collector(false).collect();
+		givenG2ApiWithPrice(2000, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10);
+		PriceRepository lyingAfterDelete = countLyingAfterDelete();
+
+		assertThatThrownBy(() -> collector(true, 30, lyingAfterDelete, collectionRunRepository).collect())
+				.isInstanceOf(DataCollectionException.class)
+				.hasMessageContaining("저장 후");
+
+		assertThat(pricesOf(DAY)).hasSize(100).allMatch(p -> p.endsWith("-1000"));
+		assertThat(runs()).hasSize(1);
+	}
+
+	@Test
+	void 이력_저장이_실패하면_가격_교체까지_롤백되고_기존_이력이_유지된다() {
+		givenG2Base();
+		collector(false).collect();
+		givenG2ApiWithPrice(2000, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10);
+		CollectionRunRepository failingRuns = mock(CollectionRunRepository.class, delegatesTo(collectionRunRepository));
+		doThrow(new IllegalStateException("이력 저장 실패")).when(failingRuns).saveAndFlush(any());
+
+		assertThatThrownBy(() -> collector(false, 30, priceRepository, failingRuns).collect())
+				.hasMessageContaining("이력 저장 실패");
+
+		assertThat(pricesOf(DAY)).hasSize(100).allMatch(p -> p.endsWith("-1000"));
+		assertThat(runs()).hasSize(1);
+	}
+
+	@Test
+	void 첫_수집에서_이력_저장이_실패하면_아무것도_저장하지_않는다() {
+		givenG2Base();
+		CollectionRunRepository failingRuns = mock(CollectionRunRepository.class, delegatesTo(collectionRunRepository));
+		doThrow(new IllegalStateException("이력 저장 실패")).when(failingRuns).saveAndFlush(any());
+
+		assertThatThrownBy(() -> collector(false, 30, priceRepository, failingRuns).collect())
+				.hasMessageContaining("이력 저장 실패");
+
+		assertThat(tableCounts()).containsOnly(0L);
+		assertThat(runs()).isEmpty();
+	}
+
+	@Test
 	void 응답_건수가_딱_떨어지면_경고만_남기고_저장한다() {
 		givenApi(regions(), stores(100), products(), Map.of(RAMEN, prices(100, RAMEN), SOUP, prices(3, SOUP)));
 
@@ -542,11 +725,76 @@ class DataCollectorTest {
 	 * 재시도 대기 시간은 테스트 속도를 위해 0으로 둔다. 운영 값(1초·2초)은 설정 바인딩 테스트로 확인한다.
 	 */
 	private DataCollector collector(boolean allowShrink, int maxTotalRetries) {
+		return collector(allowShrink, maxTotalRetries, priceRepository, collectionRunRepository);
+	}
+
+	private DataCollector collector(boolean allowShrink, int maxTotalRetries, PriceRepository prices,
+			CollectionRunRepository runs) {
 		MartPickProperties properties = new MartPickProperties(DAY,
 				new MartPickProperties.Collect(false, List.of(RAMEN, SOUP), List.of(115L), allowShrink,
 						List.of(Duration.ZERO, Duration.ZERO), maxTotalRetries));
 		return new DataCollector(client, properties, regionRepository, storeRepository, productRepository,
-				priceRepository, new TransactionTemplate(transactionManager));
+				prices, runs, new TransactionTemplate(transactionManager));
+	}
+
+	/** G2 기준 수집: 판매점 12곳, 상품 10개(기준 2 + 기준 외 8)가 각 10건 → 전체 100건, 가격 보유 상품 10개 */
+	private void givenG2Base() {
+		givenG2Api(10, 10, 10, 10, 10, 10, 10, 10, 10, 10);
+	}
+
+	/**
+	 * @param counts 가격 건수. 순서대로 RAMEN, SOUP, 기준 외 상품 8개
+	 */
+	private void givenG2Api(int... counts) {
+		givenG2ApiWithPrice(1000, counts);
+	}
+
+	private void givenG2ApiWithPrice(int price, int... counts) {
+		List<ProductRow> products = g2Products();
+		Map<Long, List<PriceRow>> prices = new LinkedHashMap<>();
+		for (int i = 0; i < products.size(); i++) {
+			long goodId = products.get(i).goodId();
+			List<PriceRow> rows = new ArrayList<>();
+			for (long entpId = 1; entpId <= counts[i]; entpId++) {
+				rows.add(price(entpId, goodId, price));
+			}
+			prices.put(goodId, rows);
+		}
+		givenApi(regions(), stores(12), products, prices);
+	}
+
+	private static List<ProductRow> g2Products() {
+		List<ProductRow> products = new ArrayList<>(List.of(product(RAMEN), product(SOUP)));
+		for (long i = 1; i <= 8; i++) {
+			products.add(product(20_000 + i));
+		}
+		return products;
+	}
+
+	/**
+	 * 조사일 가격 삭제가 실행된 뒤부터 가격 건수를 실제보다 1 크게 돌려주는 리포지토리.
+	 * 저장 후 건수 검증만 실패시키고, 수집 전·트랜잭션 시작 시 이력 확인은 실제 값으로 통과시킨다.
+	 */
+	private PriceRepository countLyingAfterDelete() {
+		AtomicBoolean deleted = new AtomicBoolean();
+		PriceRepository repository = mock(PriceRepository.class, delegatesTo(priceRepository));
+		doAnswer(invocation -> {
+			deleted.set(true);
+			return priceRepository.deleteByInspectDay(invocation.getArgument(0));
+		}).when(repository).deleteByInspectDay(any());
+		doAnswer(invocation -> priceRepository.countByInspectDay(invocation.getArgument(0)) + (deleted.get() ? 1 : 0))
+				.when(repository).countByInspectDay(any());
+		return repository;
+	}
+
+	/** 성공 이력을 "조사일|상품 수|가격 보유 상품 수|전체 가격 건수"로 저장 순서대로 반환한다. */
+	private List<String> runs() {
+		return jdbc.queryForList("select inspect_day || '|' || product_count || '|' || priced_product_count || '|' || price_count"
+				+ " from collection_run order by id", String.class);
+	}
+
+	private Long latestRunId() {
+		return jdbc.queryForObject("select max(id) from collection_run", Long.class);
 	}
 
 	private static PublicDataApiException networkError() {
