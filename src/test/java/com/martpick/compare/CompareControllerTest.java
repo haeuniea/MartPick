@@ -2,7 +2,10 @@ package com.martpick.compare;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
@@ -20,9 +23,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.martpick.cart.GuestCart;
+import com.martpick.cart.CartService;
 import com.martpick.compare.InvalidComparisonRequestException.Reason;
 import com.martpick.config.SecurityConfig;
+import com.martpick.member.MemberUserDetails;
 
 @WebMvcTest(CompareController.class)
 @Import(SecurityConfig.class)
@@ -42,11 +46,11 @@ class CompareControllerTest {
 	private ComparisonService comparisonService;
 
 	@MockitoBean
-	private GuestCart guestCart;
+	private CartService cartService;
 
 	@BeforeEach
 	void setUp() {
-		given(guestCart.lines()).willReturn(CART);
+		given(cartService.lines(null)).willReturn(CART);
 	}
 
 	@Test
@@ -179,6 +183,22 @@ class CompareControllerTest {
 		mockMvc.perform(get("/compare"))
 				.andExpect(redirectedUrl("/cart"))
 				.andExpect(flash().attribute("error", "비교할 지역을 선택해 주세요."));
+	}
+
+	@Test
+	void 로그인한_회원이면_회원_장바구니로_비교한다() throws Exception {
+		MemberUserDetails member = new MemberUserDetails(7L, "tester01", "hash");
+		List<CartLine> memberCart = List.of(new CartLine(224L, 3));
+		given(cartService.lines(member)).willReturn(memberCart);
+		given(comparisonService.compare(SEOUL, memberCart))
+				.willReturn(new ComparisonResult(INSPECT_DAY, SEOUL, "서울특별시", List.of(), List.of()));
+
+		mockMvc.perform(get("/compare").with(user(member)).param("areaCode", SEOUL).param("memberId", "999"))
+				.andExpect(status().isOk());
+
+		then(cartService).should().lines(member);
+		then(comparisonService).should().compare(SEOUL, memberCart);
+		then(comparisonService).should(never()).compare(SEOUL, CART);
 	}
 
 	private void assertRedirectWithError(Reason reason, String message) throws Exception {

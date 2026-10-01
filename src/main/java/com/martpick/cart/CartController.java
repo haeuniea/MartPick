@@ -2,6 +2,7 @@ package com.martpick.cart;
 
 import java.util.List;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
@@ -15,25 +16,28 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.martpick.compare.ComparisonService;
 import com.martpick.config.MartPickProperties;
+import com.martpick.member.MemberUserDetails;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 비회원 장바구니 화면. 상태를 바꾸는 요청은 POST 처리 후 redirect한다 (PRG).
+ * 장바구니 화면. 비회원은 세션 장바구니를, 로그인한 회원은 DB 장바구니를 쓴다 ({@link CartService}).
+ * 회원은 인증 정보({@code @AuthenticationPrincipal})로만 정하며 요청 파라미터에서 받지 않는다.
+ * 상태를 바꾸는 요청은 POST 처리 후 redirect한다 (PRG).
  */
 @Controller
 @RequestMapping("/cart")
 @RequiredArgsConstructor
 public class CartController {
 
-	private final GuestCartService guestCartService;
+	private final CartService cartService;
 	private final ComparisonService comparisonService;
 	private final MartPickProperties properties;
 
 	@GetMapping
-	public String cart(Model model) {
-		List<CartItemView> items = guestCartService.items();
+	public String cart(@AuthenticationPrincipal MemberUserDetails member, Model model) {
+		List<CartItemView> items = cartService.items(member);
 		model.addAttribute("items", items);
 		model.addAttribute("regions", items.isEmpty() ? List.of() : comparisonService.comparableRegions());
 		model.addAttribute("inspectDay", properties.inspectDay());
@@ -46,10 +50,11 @@ public class CartController {
 	 * 목록에서 보던 위치로 돌아가도록 담은 상품의 카드 앵커로 이동하고, 그 카드에 결과를 표시하도록 상품 ID를 넘긴다.
 	 */
 	@PostMapping("/items")
-	public String add(@RequestParam long goodId, @RequestParam(required = false) String keyword,
-			@RequestParam(required = false) String page, RedirectAttributes redirectAttributes) {
+	public String add(@AuthenticationPrincipal MemberUserDetails member, @RequestParam long goodId,
+			@RequestParam(required = false) String keyword, @RequestParam(required = false) String page,
+			RedirectAttributes redirectAttributes) {
 		try {
-			String name = guestCartService.add(goodId);
+			String name = cartService.add(member, goodId);
 			redirectAttributes.addFlashAttribute("message", name + "을(를) 장바구니에 담았습니다.");
 		} catch (InvalidCartRequestException e) {
 			redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -65,14 +70,14 @@ public class CartController {
 	}
 
 	@PostMapping("/items/{goodId}/quantity")
-	public String changeQuantity(@PathVariable long goodId, @Valid QuantityForm form, BindingResult bindingResult,
-			RedirectAttributes redirectAttributes) {
+	public String changeQuantity(@AuthenticationPrincipal MemberUserDetails member, @PathVariable long goodId,
+			@Valid QuantityForm form, BindingResult bindingResult, RedirectAttributes redirectAttributes) {
 		if (bindingResult.hasErrors()) {
 			redirectAttributes.addFlashAttribute("error", GuestCart.QUANTITY_RANGE_MESSAGE);
 			return "redirect:/cart";
 		}
 		try {
-			guestCartService.changeQuantity(goodId, form.quantity());
+			cartService.changeQuantity(member, goodId, form.quantity());
 		} catch (InvalidCartRequestException e) {
 			redirectAttributes.addFlashAttribute("error", e.getMessage());
 		}
@@ -80,8 +85,8 @@ public class CartController {
 	}
 
 	@PostMapping("/items/{goodId}/delete")
-	public String remove(@PathVariable long goodId) {
-		guestCartService.remove(goodId);
+	public String remove(@AuthenticationPrincipal MemberUserDetails member, @PathVariable long goodId) {
+		cartService.remove(member, goodId);
 		return "redirect:/cart";
 	}
 }

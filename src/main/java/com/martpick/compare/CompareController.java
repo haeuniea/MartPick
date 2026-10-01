@@ -1,18 +1,21 @@
 package com.martpick.compare;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-import com.martpick.cart.GuestCart;
+import com.martpick.cart.CartService;
 import com.martpick.compare.InvalidComparisonRequestException.Reason;
+import com.martpick.member.MemberUserDetails;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * 비회원 장바구니로 선택 지역의 판매점 가격을 비교한다. 조회만 하므로 GET으로 처리한다.
+ * 장바구니로 선택 지역의 판매점 가격을 비교한다. 비회원은 세션 장바구니를, 로그인한 회원은 DB 장바구니를 입력으로 쓴다.
+ * 조회만 하므로 GET으로 처리한다.
  * 비교 요청 오류는 장바구니 화면으로 돌려보내 사유를 안내한다 (PROJECT_SPEC 5장).
  */
 @Controller
@@ -20,14 +23,14 @@ import lombok.RequiredArgsConstructor;
 public class CompareController {
 
 	private final ComparisonService comparisonService;
-	private final GuestCart guestCart;
+	private final CartService cartService;
 
 	@GetMapping("/compare")
-	public String compare(@RequestParam(required = false) String areaCode, Model model,
-			RedirectAttributes redirectAttributes) {
+	public String compare(@AuthenticationPrincipal MemberUserDetails member,
+			@RequestParam(required = false) String areaCode, Model model, RedirectAttributes redirectAttributes) {
 		ComparisonResult result;
 		try {
-			result = comparisonService.compare(areaCode, guestCart.lines());
+			result = comparisonService.compare(areaCode, cartService.lines(member));
 		} catch (InvalidComparisonRequestException e) {
 			redirectAttributes.addFlashAttribute("error", messageFor(e.getReason()));
 			return "redirect:/cart";
