@@ -20,7 +20,7 @@ MartPick(마트픽) — 장바구니 상품 기준으로 선택 지역 판매점
 - Service: 비즈니스 로직과 트랜잭션 경계(`@Transactional`), 조회 전용 메서드는 `@Transactional(readOnly = true)`
 - Repository: Spring Data JPA — Query Method 우선, 필요할 때만 JPQL `@Query`
 - Entity를 템플릿 모델에 직접 넘기지 않음 — 화면용 DTO로 변환
-- 예외는 커스텀 예외 + `@ControllerAdvice`에서 처리하고 오류 화면/메시지로 안내
+- 예외는 커스텀 예외(`InvalidCartRequestException`, `InvalidComparisonRequestException` 등)로 던지고, 각 컨트롤러가 잡아 flash 메시지와 redirect로 안내. `@ControllerAdvice` 공통 처리는 도입하지 않음
 - 가격 비교 계산은 인증 로직과 분리하며, 장바구니(상품 ID·수량), 지역, 기준 조사일을 입력으로 사용합니다. 회원·인증 정보에 직접 의존하지 않습니다.
 - 외부 공공데이터 API는 사용자 요청 시 호출하지 않음 — 수집해 DB에 저장한 데이터로 비교
 
