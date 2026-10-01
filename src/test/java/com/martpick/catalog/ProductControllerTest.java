@@ -191,6 +191,23 @@ class ProductControllerTest {
 	}
 
 	@Test
+	void 상품_카드마다_담기_후_돌아올_위치를_두고_방금_담은_상품에_결과를_표시한다() throws Exception {
+		given(productService.search(null, 1)).willReturn(onePage(
+				new ProductView(1000L, "팔도 왕뚜껑(110g)", "110 G"),
+				new ProductView(292L, "햇반(210g)", "210 G")));
+
+		String html = mockMvc.perform(get("/products")
+						.flashAttr("lastGoodId", 1000L)
+						.flashAttr("message", "팔도 왕뚜껑(110g)을(를) 장바구니에 담았습니다."))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("id=\"product-1000\"", "id=\"product-292\"");
+		String addedCard = html.substring(html.indexOf("id=\"product-1000\""), html.indexOf("id=\"product-292\""));
+		assertThat(addedCard).contains("팔도 왕뚜껑(110g)을(를) 장바구니에 담았습니다.");
+		assertThat(html.split("팔도 왕뚜껑\\(110g\\)을\\(를\\) 장바구니에 담았습니다\\.", -1)).as("안내는 한 곳에만").hasSize(2);
+	}
+
+	@Test
 	void 검색어의_HTML은_이스케이프한다() throws Exception {
 		given(productService.search("<script>alert(1)</script>", 1)).willReturn(onePage());
 

@@ -8,30 +8,46 @@
 </head>
 <body>
 
-<header class="site-header" th:fragment="header">
+<!-- active: 현재 메뉴 ('products' 또는 'cart'). 해당 메뉴를 강조하고 aria-current를 붙인다. -->
+<header class="site-header" th:fragment="header(active)">
 	<div class="container site-header__inner">
-		<a class="brand" th:href="@{/products}">
-			<span class="brand__mark" aria-hidden="true">₩</span>
+		<a class="brand" th:href="@{/products}" aria-label="마트픽 홈">
+			<svg th:replace="~{fragments/icons :: logo}"></svg>
 			<span class="brand__name">마트픽</span>
 		</a>
 		<nav class="site-nav" aria-label="주요 메뉴">
-			<a th:href="@{/products}">상품 찾기</a>
-			<a th:href="@{/cart}">장바구니</a>
+			<a class="site-nav__link" th:href="@{/products}"
+				th:classappend="${active == 'products'} ? 'is-active'"
+				th:attr="aria-current=${active == 'products'} ? 'page' : null">
+				<svg th:replace="~{fragments/icons :: search}"></svg><span>상품 찾기</span>
+			</a>
+			<a class="site-nav__link" th:href="@{/cart}"
+				th:classappend="${active == 'cart'} ? 'is-active'"
+				th:attr="aria-current=${active == 'cart'} ? 'page' : null">
+				<svg th:replace="~{fragments/icons :: cart}"></svg><span>장바구니</span>
+			</a>
 		</nav>
 	</div>
 </header>
 
 <div class="alerts" th:fragment="alerts" th:if="${message != null or error != null}">
-	<p class="alert alert--success" role="status" th:if="${message != null}" th:text="${message}">담았습니다.</p>
-	<p class="alert alert--error" role="alert" th:if="${error != null}" th:text="${error}">오류</p>
+	<p class="alert alert--success" role="status" th:if="${message != null}">
+		<svg th:replace="~{fragments/icons :: check}"></svg><span th:text="${message}">담았습니다.</span>
+	</p>
+	<p class="alert alert--error" role="alert" th:if="${error != null}">
+		<svg th:replace="~{fragments/icons :: alert}"></svg><span th:text="${error}">오류</span>
+	</p>
 </div>
 
 <section class="survey-notice" th:fragment="surveyNotice(inspectDay)" aria-label="가격 기준 안내">
 	<div class="container survey-notice__inner">
-		<p class="survey-notice__day">
-			<strong th:text="${#temporals.format(inspectDay, 'yyyy년 M월 d일')}">2026년 9월 25일</strong> 조사 가격 기준
-		</p>
-		<p class="survey-notice__caution">한국소비자원 생필품 가격 정보의 조사 가격이며, 실시간 판매 가격·재고를 보장하지 않습니다.</p>
+		<span class="survey-notice__icon"><svg th:replace="~{fragments/icons :: calendar}"></svg></span>
+		<div>
+			<p class="survey-notice__day">
+				<strong th:text="${#temporals.format(inspectDay, 'yyyy년 M월 d일')}">2026년 9월 25일</strong> 조사 가격 기준
+			</p>
+			<p class="survey-notice__caution">한국소비자원 생필품 가격 정보의 조사 가격이며, 실시간 판매 가격·재고를 보장하지 않습니다.</p>
+		</div>
 	</div>
 </section>
 

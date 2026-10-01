@@ -43,6 +43,7 @@ public class CartController {
 	/**
 	 * 담기 후에도 상품 탐색 화면의 검색어와 페이지 번호를 유지한다 (PROJECT_SPEC 2-1).
 	 * 페이지 번호는 1 이상의 정수일 때만 이어 붙이고, 범위 보정은 상품 탐색 화면이 맡는다.
+	 * 목록에서 보던 위치로 돌아가도록 담은 상품의 카드 앵커로 이동하고, 그 카드에 결과를 표시하도록 상품 ID를 넘긴다.
 	 */
 	@PostMapping("/items")
 	public String add(@RequestParam long goodId, @RequestParam(required = false) String keyword,
@@ -59,7 +60,8 @@ public class CartController {
 		if (page != null && page.matches("[1-9]\\d{0,9}")) {
 			redirectAttributes.addAttribute("page", page);
 		}
-		return "redirect:/products";
+		redirectAttributes.addFlashAttribute("lastGoodId", goodId);
+		return "redirect:/products#product-" + goodId;
 	}
 
 	@PostMapping("/items/{goodId}/quantity")

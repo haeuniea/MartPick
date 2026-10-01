@@ -54,8 +54,21 @@ class CartControllerTest {
 
 		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("keyword", "왕뚜껑"))
 				.andExpect(status().is3xxRedirection())
-				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91"))
+				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91#product-1000"))
 				.andExpect(flash().attribute("message", "팔도 왕뚜껑(110g)을(를) 장바구니에 담았습니다."));
+	}
+
+	@Test
+	void 담기_후_담은_상품_위치로_돌아가도록_상품을_표시한다() throws Exception {
+		given(guestCartService.add(1000L)).willReturn("팔도 왕뚜껑(110g)");
+		given(guestCartService.add(292L)).willThrow(new InvalidCartRequestException("상품당 최대 99개까지 담을 수 있습니다."));
+
+		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000"))
+				.andExpect(redirectedUrl("/products#product-1000"))
+				.andExpect(flash().attribute("lastGoodId", 1000L));
+		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "292"))
+				.andExpect(redirectedUrl("/products#product-292"))
+				.andExpect(flash().attribute("lastGoodId", 292L));
 	}
 
 	@Test
@@ -64,9 +77,9 @@ class CartControllerTest {
 
 		mockMvc.perform(post("/cart/items").with(csrf())
 						.param("goodId", "1000").param("keyword", "왕뚜껑").param("page", "3"))
-				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91&page=3"));
+				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91&page=3#product-1000"));
 		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("page", "2"))
-				.andExpect(redirectedUrl("/products?page=2"));
+				.andExpect(redirectedUrl("/products?page=2#product-1000"));
 	}
 
 	@Test
@@ -82,7 +95,8 @@ class CartControllerTest {
 			MultiValueMap<String, String> query = UriComponentsBuilder.fromUriString(redirectedUrl).build(true).getQueryParams();
 			assertThat(URLDecoder.decode(query.getFirst("keyword"), StandardCharsets.UTF_8)).as(keyword).isEqualTo(keyword);
 			assertThat(query.get("page")).as(keyword).containsExactly("2");
-			assertThat(redirectedUrl).as(keyword).doesNotContain("#");
+			assertThat(redirectedUrl).as(keyword).endsWith("#product-1000");
+			assertThat(redirectedUrl.substring(0, redirectedUrl.length() - "#product-1000".length())).as(keyword).doesNotContain("#");
 		}
 	}
 
@@ -92,7 +106,7 @@ class CartControllerTest {
 
 		mockMvc.perform(post("/cart/items").with(csrf())
 						.param("goodId", "1000").param("keyword", "왕뚜껑").param("page", "3"))
-				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91&page=3"))
+				.andExpect(redirectedUrl("/products?keyword=%EC%99%95%EB%9A%9C%EA%BB%91&page=3#product-1000"))
 				.andExpect(flash().attribute("error", "상품당 최대 99개까지 담을 수 있습니다."));
 	}
 
@@ -102,7 +116,7 @@ class CartControllerTest {
 
 		for (String page : new String[] {"abc", "0", "-1", "", "1.5"}) {
 			mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("page", page))
-					.andExpect(redirectedUrl("/products"));
+					.andExpect(redirectedUrl("/products#product-1000"));
 		}
 	}
 
@@ -111,7 +125,7 @@ class CartControllerTest {
 		given(guestCartService.add(1000L)).willReturn("팔도 왕뚜껑(110g)");
 
 		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("keyword", " "))
-				.andExpect(redirectedUrl("/products"));
+				.andExpect(redirectedUrl("/products#product-1000"));
 	}
 
 	@Test
@@ -119,7 +133,7 @@ class CartControllerTest {
 		given(guestCartService.add(1000L)).willThrow(new InvalidCartRequestException("상품당 최대 99개까지 담을 수 있습니다."));
 
 		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000"))
-				.andExpect(redirectedUrl("/products"))
+				.andExpect(redirectedUrl("/products#product-1000"))
 				.andExpect(flash().attribute("error", "상품당 최대 99개까지 담을 수 있습니다."));
 	}
 

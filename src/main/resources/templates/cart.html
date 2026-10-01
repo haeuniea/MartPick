@@ -2,62 +2,91 @@
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head th:replace="~{fragments/layout :: head('장바구니')}"></head>
 <body>
-<header th:replace="~{fragments/layout :: header}"></header>
+<header th:replace="~{fragments/layout :: header('cart')}"></header>
 <section th:replace="~{fragments/layout :: surveyNotice(${inspectDay})}"></section>
 
 <main class="container page">
-	<div class="page-heading page-heading--split">
+	<div class="page-heading">
 		<div>
-			<h1>장바구니</h1>
-			<p class="page-heading__lead">가격은 판매점마다 달라 비교 전에는 표시하지 않습니다.</p>
+			<h1 class="page-title">장바구니</h1>
+			<p class="page-lead">담은 상품으로 여러 판매점의 가격을 비교해 보세요.</p>
 		</div>
-		<a class="button button--outline" th:href="@{/products}">상품 더 담기</a>
+		<a class="button button--secondary" th:href="@{/products}">
+			<svg th:replace="~{fragments/icons :: arrowLeft}"></svg><span>상품 더 담기</span>
+		</a>
 	</div>
 
 	<div th:replace="~{fragments/layout :: alerts}"></div>
 
 	<div class="empty" th:if="${#lists.isEmpty(items)}">
+		<span class="empty__icon"><svg th:replace="~{fragments/icons :: cart}"></svg></span>
 		<p class="empty__title">장바구니가 비어 있습니다.</p>
-		<p><a th:href="@{/products}">상품 찾기</a>에서 비교할 상품을 담아 주세요.</p>
+		<p class="empty__text">상품 찾기에서 비교할 상품을 담아 주세요.</p>
+		<a class="button button--primary" th:href="@{/products}">
+			<svg th:replace="~{fragments/icons :: search}"></svg><span>상품 찾으러 가기</span>
+		</a>
 	</div>
 
 	<th:block th:unless="${#lists.isEmpty(items)}">
-		<ul class="cart-list">
-			<li class="cart-row" th:each="item : ${items}">
-				<div class="cart-row__info">
-					<p class="cart-row__name" th:text="${item.name}">오리온 초코파이(18개입)</p>
-					<p class="cart-row__spec" th:if="${item.spec != null}">
-						규격 <span th:text="${item.spec}">702 G</span>
-					</p>
+		<div class="cart-layout">
+			<section class="panel cart-panel" aria-labelledby="cart-summary">
+				<div class="cart-summary">
+					<span class="cart-summary__icon"><svg th:replace="~{fragments/icons :: cart}"></svg></span>
+					<div>
+						<p class="cart-summary__count" id="cart-summary">
+							상품 <strong th:text="${#lists.size(items)}">3</strong>종 ·
+							총 <strong th:text="${#aggregates.sum(items.![quantity])}">4</strong>개
+						</p>
+						<p class="cart-summary__note">가격은 판매점마다 달라 비교 전에는 표시하지 않습니다.</p>
+					</div>
 				</div>
-				<form class="cart-row__quantity" th:action="@{/cart/items/{goodId}/quantity(goodId=${item.goodId})}"
-					method="post">
-					<label class="visually-hidden" th:for="'quantity-' + ${item.goodId}"
-						th:text="${item.name} + ' 수량'">수량</label>
-					<input class="quantity-input" type="number" name="quantity" th:id="'quantity-' + ${item.goodId}"
-						th:value="${item.quantity}" min="1" max="99" step="1" required inputmode="numeric">
-					<span class="cart-row__unit" aria-hidden="true">개</span>
-					<button class="button button--ghost button--small" type="submit">변경</button>
-				</form>
-				<form class="cart-row__delete" th:action="@{/cart/items/{goodId}/delete(goodId=${item.goodId})}"
-					method="post">
-					<button class="button button--ghost button--small" type="submit"
-						th:attr="aria-label=${item.name} + ' 삭제'">삭제</button>
-				</form>
-			</li>
-		</ul>
 
-		<form class="compare-panel" th:action="@{/compare}" method="get">
-			<div class="compare-panel__field">
-				<label for="areaCode">비교할 지역 (시·도)</label>
-				<select id="areaCode" name="areaCode" required>
+				<ul class="cart-list">
+					<li class="cart-row" th:each="item : ${items}">
+						<div class="cart-row__info">
+							<p class="cart-row__name" th:text="${item.name}">오리온 초코파이(18개입)</p>
+							<p class="cart-row__spec" th:if="${item.spec != null}">
+								규격 <span th:text="${item.spec}">702 G</span>
+							</p>
+						</div>
+						<div class="cart-row__actions">
+							<form class="cart-row__quantity" th:action="@{/cart/items/{goodId}/quantity(goodId=${item.goodId})}"
+								method="post">
+								<label class="visually-hidden" th:for="'quantity-' + ${item.goodId}"
+									th:text="${item.name} + ' 수량'">수량</label>
+								<input class="quantity-input" type="number" name="quantity" th:id="'quantity-' + ${item.goodId}"
+									th:value="${item.quantity}" min="1" max="99" step="1" required inputmode="numeric">
+								<span class="cart-row__unit" aria-hidden="true">개</span>
+								<button class="button button--secondary button--small" type="submit"
+									th:attr="aria-label=${item.name} + ' 수량 변경'">변경</button>
+							</form>
+							<form class="cart-row__delete" th:action="@{/cart/items/{goodId}/delete(goodId=${item.goodId})}"
+								method="post">
+								<button class="button button--danger button--small" type="submit"
+									th:attr="aria-label=${item.name} + ' 삭제'">
+									<svg th:replace="~{fragments/icons :: trash}"></svg><span>삭제</span>
+								</button>
+							</form>
+						</div>
+					</li>
+				</ul>
+			</section>
+
+			<form class="panel compare-panel" th:action="@{/compare}" method="get" aria-labelledby="compare-panel-title">
+				<h2 class="compare-panel__title" id="compare-panel-title">
+					<svg th:replace="~{fragments/icons :: pin}"></svg><span>비교할 지역 선택</span>
+				</h2>
+				<label class="compare-panel__label" for="areaCode">시·도</label>
+				<select class="select" id="areaCode" name="areaCode" required>
 					<option value="">지역 선택</option>
 					<option th:each="region : ${regions}" th:value="${region.code}" th:text="${region.name}">서울특별시</option>
 				</select>
-			</div>
-			<button class="button button--ink" type="submit">가격 비교하기</button>
-			<p class="compare-panel__hint">선택한 지역은 저장하지 않으며 이번 비교에만 사용합니다.</p>
-		</form>
+				<button class="button button--primary button--large button--block" type="submit">
+					<span>가격 비교하기</span><svg th:replace="~{fragments/icons :: arrowRight}"></svg>
+				</button>
+				<p class="compare-panel__hint">선택한 지역은 저장하지 않으며 이번 비교에만 사용합니다.</p>
+			</form>
+		</div>
 	</th:block>
 </main>
 

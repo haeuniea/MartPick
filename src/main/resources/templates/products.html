@@ -2,69 +2,100 @@
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head th:replace="~{fragments/layout :: head('상품 찾기')}"></head>
 <body>
-<header th:replace="~{fragments/layout :: header}"></header>
+<header th:replace="~{fragments/layout :: header('products')}"></header>
 <section th:replace="~{fragments/layout :: surveyNotice(${inspectDay})}"></section>
 
-<main class="container page">
-	<div class="page-heading page-heading--split">
-		<div>
-			<h1>상품 찾기</h1>
-			<p class="page-heading__lead">담은 상품으로 지역 판매점의 장바구니 가격을 비교합니다.</p>
+<main class="container page page--tight">
+	<section class="hero" aria-labelledby="page-title">
+		<div class="hero__top">
+			<div>
+				<h1 id="page-title" class="page-title">상품 찾기</h1>
+				<p class="page-lead">담은 상품으로 지역 판매점의 장바구니 가격을 비교합니다.</p>
+			</div>
+			<a class="button button--secondary" th:href="@{/cart}">
+				<svg th:replace="~{fragments/icons :: cart}"></svg><span>장바구니 보기</span>
+			</a>
 		</div>
-		<a class="button button--outline" th:href="@{/cart}">장바구니 보기</a>
-	</div>
+		<form class="search" th:action="@{/products}" method="get" role="search">
+			<label class="visually-hidden" for="keyword">상품명 검색</label>
+			<span class="search__icon"><svg th:replace="~{fragments/icons :: search}"></svg></span>
+			<input class="search__input" type="search" id="keyword" name="keyword" th:value="${keyword}"
+				placeholder="상품명으로 찾기 (예: 햇반, 라면, 우유)" maxlength="50">
+			<button class="button button--primary search__button" type="submit">검색</button>
+		</form>
+	</section>
 
-	<div th:replace="~{fragments/layout :: alerts}"></div>
-
-	<form class="search" th:action="@{/products}" method="get" role="search">
-		<label class="visually-hidden" for="keyword">상품명 검색</label>
-		<input class="search__input" type="search" id="keyword" name="keyword" th:value="${keyword}"
-			placeholder="상품명으로 찾기 (예: 햇반)" maxlength="50">
-		<button class="button button--ink" type="submit">검색</button>
-	</form>
-	<p class="hint">기준 조사일에 가격 데이터가 없는 상품도 있습니다. 이런 상품은 비교 결과에서 가격 정보 없음으로 표시될 수 있습니다.</p>
-
-	<th:block th:if="${#lists.isEmpty(result.products)}">
-		<div class="empty">
-			<p class="empty__title">검색 결과가 없습니다.</p>
-			<p>다른 상품명으로 검색하거나 <a th:href="@{/products}">전체 상품</a>을 확인해 주세요.</p>
-		</div>
+	<th:block th:if="${lastGoodId == null}">
+		<div th:replace="~{fragments/layout :: alerts}"></div>
 	</th:block>
 
+	<div class="empty" th:if="${#lists.isEmpty(result.products)}">
+		<span class="empty__icon"><svg th:replace="~{fragments/icons :: search}"></svg></span>
+		<p class="empty__title">검색 결과가 없습니다.</p>
+		<p class="empty__text">다른 상품명으로 검색하거나 전체 상품을 확인해 주세요.</p>
+		<a class="button button--secondary" th:href="@{/products}">전체 상품 보기</a>
+	</div>
+
 	<th:block th:unless="${#lists.isEmpty(result.products)}">
-		<p class="result-count">
-			<span th:if="${keyword != ''}">‘<span th:text="${keyword}">햇반</span>’ 검색 결과 </span>
-			총 <strong th:text="${result.totalCount}">604</strong>개
-			<span class="result-count__page" th:if="${result.totalPages > 1}"
-				th:text="|· ${result.page} / ${result.totalPages} 페이지|">· 1 / 21 페이지</span>
+		<div class="toolbar">
+			<p class="result-count">
+				<span th:if="${keyword != ''}" class="result-count__keyword">‘<span th:text="${keyword}">햇반</span>’ 검색 결과</span>
+				총 <strong th:text="${result.totalCount}">604</strong>개
+				<span class="result-count__page" th:if="${result.totalPages > 1}"
+					th:text="|${result.page} / ${result.totalPages} 페이지|">1 / 21 페이지</span>
+			</p>
+			<a class="text-link" th:if="${keyword != ''}" th:href="@{/products}">검색어 지우고 전체 보기</a>
+		</div>
+		<p class="hint">
+			<svg th:replace="~{fragments/icons :: info}"></svg>
+			<span>기준 조사일에 가격 데이터가 없는 상품도 있습니다. 이런 상품은 비교 결과에서 가격 정보 없음으로 표시될 수 있습니다.</span>
 		</p>
+
 		<ul class="product-grid">
-			<li class="product-card" th:each="product, stat : ${result.products}" th:style="'--i:' + ${stat.index % 12}">
-				<span class="product-card__hole" aria-hidden="true"></span>
+			<li class="product-card" th:each="product : ${result.products}" th:id="'product-' + ${product.goodId}"
+				th:with="added=${lastGoodId != null and lastGoodId == product.goodId}"
+				th:classappend="${added} ? 'product-card--added'">
 				<p class="product-card__name" th:text="${product.name}">팔도 왕뚜껑(110g)</p>
 				<p class="product-card__spec" th:if="${product.spec != null}">
 					규격 <span th:text="${product.spec}">110 G</span>
+				</p>
+				<p class="product-card__status product-card__status--success" role="status"
+					th:if="${added and message != null}">
+					<svg th:replace="~{fragments/icons :: check}"></svg><span th:text="${message}">담았습니다.</span>
+				</p>
+				<p class="product-card__status product-card__status--error" role="alert"
+					th:if="${added and error != null}">
+					<svg th:replace="~{fragments/icons :: alert}"></svg><span th:text="${error}">오류</span>
 				</p>
 				<form class="product-card__add" th:action="@{/cart/items}" method="post">
 					<input type="hidden" name="goodId" th:value="${product.goodId}">
 					<input type="hidden" name="keyword" th:value="${keyword}">
 					<input type="hidden" name="page" th:value="${result.page}">
-					<button class="button button--accent button--small" type="submit">담기</button>
+					<button class="button button--soft button--block" type="submit"
+						th:attr="aria-label=${product.name} + ' 담기'">
+						<svg th:replace="~{fragments/icons :: cart}"></svg><span>담기</span>
+					</button>
 				</form>
 			</li>
 		</ul>
 
 		<nav class="pagination" aria-label="상품 목록 페이지" th:if="${result.totalPages > 1}">
 			<a class="pagination__step" th:if="${result.hasPrevious()}"
-				th:href="${keyword == ''} ? @{/products(page=${result.page - 1})} : @{/products(keyword=${keyword},page=${result.page - 1})}">이전</a>
+				th:href="${keyword == ''} ? @{/products(page=${result.page - 1})} : @{/products(keyword=${keyword},page=${result.page - 1})}">‹ 이전</a>
+			<a th:if="${result.startPage() > 1}" aria-label="첫 페이지"
+				th:href="${keyword == ''} ? @{/products(page=1)} : @{/products(keyword=${keyword},page=1)}">1</a>
+			<span class="pagination__gap" th:if="${result.startPage() > 2}" aria-hidden="true">…</span>
 			<th:block th:each="number : ${#numbers.sequence(result.startPage(), result.endPage())}">
 				<span class="pagination__current" th:if="${number == result.page}" aria-current="page"
 					th:text="${number}">2</span>
 				<a th:unless="${number == result.page}" th:text="${number}"
 					th:href="${keyword == ''} ? @{/products(page=${number})} : @{/products(keyword=${keyword},page=${number})}">1</a>
 			</th:block>
+			<span class="pagination__gap" th:if="${result.endPage() < result.totalPages - 1}" aria-hidden="true">…</span>
+			<a th:if="${result.endPage() < result.totalPages}" aria-label="마지막 페이지" th:text="${result.totalPages}"
+				th:href="${keyword == ''} ? @{/products(page=${result.totalPages})} : @{/products(keyword=${keyword},page=${result.totalPages})}">21</a>
 			<a class="pagination__step" th:if="${result.hasNext()}"
-				th:href="${keyword == ''} ? @{/products(page=${result.page + 1})} : @{/products(keyword=${keyword},page=${result.page + 1})}">다음</a>
+				th:href="${keyword == ''} ? @{/products(page=${result.page + 1})} : @{/products(keyword=${keyword},page=${result.page + 1})}">다음 ›</a>
 		</nav>
 	</th:block>
 </main>
