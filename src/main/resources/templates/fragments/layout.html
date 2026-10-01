@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <head th:fragment="head(title)">
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +8,8 @@
 </head>
 <body>
 
-<!-- active: 현재 메뉴 ('products' 또는 'cart'). 해당 메뉴를 강조하고 aria-current를 붙인다. -->
+<!-- active: 현재 메뉴 ('products', 'cart', 'login', 'signup'). 해당 메뉴를 강조하고 aria-current를 붙인다.
+	로그인 링크는 요청 속성 loginContinue(복귀를 허용하는 화면에서만 설정, LoginContinueConfig)를 continue로 넘긴다. -->
 <header class="site-header" th:fragment="header(active)">
 	<div class="container site-header__inner">
 		<a class="brand" th:href="@{/products}" aria-label="마트픽 홈">
@@ -27,6 +28,19 @@
 				<svg th:replace="~{fragments/icons :: cart}"></svg><span>장바구니</span>
 			</a>
 		</nav>
+		<div class="site-auth" sec:authorize="isAuthenticated()">
+			<span class="site-auth__name"><strong sec:authentication="name">회원</strong>님</span>
+			<form th:action="@{/logout}" method="post">
+				<button class="button button--secondary button--small" type="submit">로그아웃</button>
+			</form>
+		</div>
+		<div class="site-auth" sec:authorize="!isAuthenticated()">
+			<a class="site-nav__link" th:classappend="${active == 'login'} ? 'is-active'"
+				th:href="${loginContinue != null and active != 'login' and active != 'signup'} ? @{/login(continue=${loginContinue})} : @{/login}"
+				th:attr="aria-current=${active == 'login'} ? 'page' : null"><span>로그인</span></a>
+			<a class="site-nav__link" th:classappend="${active == 'signup'} ? 'is-active'" th:href="@{/signup}"
+				th:attr="aria-current=${active == 'signup'} ? 'page' : null"><span>회원가입</span></a>
+		</div>
 	</div>
 </header>
 

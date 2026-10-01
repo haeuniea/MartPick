@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
@@ -44,6 +45,41 @@ class MemberControllerTest {
 		assertThat(html).contains("name=\"_csrf\"", "name=\"username\"", "name=\"password\"", "name=\"passwordConfirm\"");
 		assertThat(html).containsPattern("<input[^>]*type=\"password\"[^>]*name=\"password\"");
 		assertThat(html).containsPattern("<input[^>]*type=\"password\"[^>]*name=\"passwordConfirm\"");
+	}
+
+	@Test
+	void 가입_화면의_안내_문구는_간결하고_바이트_설명이나_대소문자_설명이_없다() throws Exception {
+		String html = mockMvc.perform(get("/signup")).andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("영문·숫자 4~20자", "8자 이상 입력해 주세요.");
+		assertThat(html).doesNotContain("바이트").doesNotContain("대소문자");
+	}
+
+	@Test
+	void 가입_화면_하단에_로그인_화면으로_가는_링크가_있다() throws Exception {
+		String html = mockMvc.perform(get("/signup")).andReturn().getResponse().getContentAsString();
+
+		assertThat(html).containsPattern("이미 회원이신가요\\?\\s*<a[^>]*href=\"/login\"[^>]*>로그인</a>");
+	}
+
+	@Test
+	void 비밀번호가_72바이트를_넘으면_이해하기_쉬운_메시지를_보여주고_값은_다시_표시하지_않는다() throws Exception {
+		String tooLong = "p".repeat(73);
+
+		String html = mockMvc.perform(signup("tester01", tooLong, tooLong))
+				.andExpect(status().isOk()).andExpect(view().name("signup"))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("비밀번호가 너무 깁니다. 입력 내용을 줄여 주세요.").doesNotContain(tooLong);
+		then(memberService).should(never()).signup(any(), any());
+	}
+
+	@Test
+	void 비밀번호_확인이_다르면_일치하지_않는다는_메시지를_보여준다() throws Exception {
+		String html = mockMvc.perform(signup("tester01", "unique-pw-9x", "unique-confirm-8y"))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("비밀번호 확인이 일치하지 않습니다.");
 	}
 
 	@Test
@@ -108,6 +144,56 @@ class MemberControllerTest {
 		mockMvc.perform(post("/signup")
 						.param("username", "tester01").param("password", "password1").param("passwordConfirm", "password1"))
 				.andExpect(status().isForbidden());
+
+		then(memberService).should(never()).signup(any(), any());
+	}
+
+	@Test
+	void 로그인_화면은_로그인_없이_볼_수_있고_고정_안내_문구를_보여준다() throws Exception {
+		String html = mockMvc.perform(get("/login"))
+				.andExpect(status().isOk())
+				.andExpect(view().name("login"))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("비회원으로 담은 상품은 로그인 후 장바구니에 자동으로 추가되지 않습니다.");
+		assertThat(html).doesNotContain("아이디 또는 비밀번호가 올바르지 않습니다.");
+		assertThat(html).containsPattern("<input[^>]*type=\"password\"[^>]*name=\"password\"");
+	}
+
+	@Test
+	void 로그인_실패_표시가_있으면_아이디_존재_여부를_구분하지_않는_한_가지_메시지를_보여준다() throws Exception {
+		String html = mockMvc.perform(get("/login").param("error", ""))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("아이디 또는 비밀번호가 올바르지 않습니다.");
+	}
+
+	@Test
+	void 로그인_화면은_허용된_continue만_숨은_입력으로_유지한다() throws Exception {
+		String valid = mockMvc.perform(get("/login").param("continue", "/products?page=2"))
+				.andReturn().getResponse().getContentAsString();
+		String invalid = mockMvc.perform(get("/login").param("continue", "//evil.com"))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(valid).contains("value=\"/products?page=2\"");
+		assertThat(invalid).doesNotContain("evil.com").doesNotContain("name=\"continue\"");
+	}
+
+	@Test
+	void 로그인한_사용자는_로그인과_가입_화면_대신_상품_탐색으로_이동한다() throws Exception {
+		MemberUserDetails member = new MemberUserDetails(1L, "tester01", "hash");
+
+		mockMvc.perform(get("/login").with(user(member))).andExpect(redirectedUrl("/products"));
+		mockMvc.perform(get("/signup").with(user(member))).andExpect(redirectedUrl("/products"));
+	}
+
+	@Test
+	void 로그인한_사용자의_가입_요청은_서비스를_호출하지_않고_상품_탐색으로_이동한다() throws Exception {
+		MemberUserDetails member = new MemberUserDetails(1L, "tester01", "hash");
+
+		mockMvc.perform(signup("other01", "password1", "password1").with(user(member)))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(redirectedUrl("/products"));
 
 		then(memberService).should(never()).signup(any(), any());
 	}

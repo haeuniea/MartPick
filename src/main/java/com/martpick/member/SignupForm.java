@@ -25,7 +25,7 @@ public record SignupForm(
 		return password == null || password.codePointCount(0, password.length()) >= PASSWORD_MIN_LENGTH;
 	}
 
-	@AssertTrue(message = "비밀번호는 72바이트 이하여야 합니다. 한글은 한 글자가 3바이트입니다.")
+	@AssertTrue(message = "비밀번호가 너무 깁니다. 입력 내용을 줄여 주세요.")
 	public boolean isPasswordWithinByteLimit() {
 		return password == null || password.getBytes(StandardCharsets.UTF_8).length <= PASSWORD_MAX_BYTES;
 	}
