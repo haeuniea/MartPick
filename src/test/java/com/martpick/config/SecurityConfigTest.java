@@ -41,6 +41,11 @@ class SecurityConfigTest {
 	}
 
 	@Test
+	void 비회원은_로그인_없이_회원가입_화면을_사용한다() throws Exception {
+		mockMvc.perform(get("/signup")).andExpect(status().isOk());
+	}
+
+	@Test
 	void 기본_로그인_화면을_제공하지_않는다() throws Exception {
 		mockMvc.perform(get("/login"))
 				.andExpect(status().isForbidden())
