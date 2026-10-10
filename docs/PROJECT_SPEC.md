@@ -1,6 +1,6 @@
 # MartPick(마트픽) 서비스 명세
 
-> 문서 상태: **개발 진행 중 (Phase 1~4 및 UI 개선 완료, Phase 5는 5-1 회원가입·5-2 로그인/로그아웃·5-3 회원 장바구니 서비스·5-4 화면 연결까지 구현)** · 최초 작성 2026-09-29 · 1단계 API 검증 결과·화면 기획 반영 2026-09-29 · 전체 상품 범위 결정 반영 2026-09-30 · 첫 전체 수집과 개발 DB 승격 반영 2026-10-01 · 비회원 화면 구현 상태와 그린 UI 화면 정책 반영 2026-10-01 · Phase 5 결정 사항과 5-1 회원가입·5-2 로그인/로그아웃·5-3 회원 장바구니 서비스·5-4 화면 연결 구현 반영 2026-10-01
+> 문서 상태: **개발 진행 중 (Phase 1~4 및 UI 개선 완료, Phase 5는 5-1 회원가입·5-2 로그인/로그아웃·5-3 회원 장바구니 서비스·5-4 화면 연결까지 구현, 5-5 보안 점검 진행, 5-6 README·`bootRunTest`·의존성 취약점 확인 반영, 5-9 취약점 수정 버전 적용)** · 최초 작성 2026-09-29 · 1단계 API 검증 결과·화면 기획 반영 2026-09-29 · 전체 상품 범위 결정 반영 2026-09-30 · 첫 전체 수집과 개발 DB 승격 반영 2026-10-01 · 비회원 화면 구현 상태와 그린 UI 화면 정책 반영 2026-10-01 · Phase 5 결정 사항과 5-1 회원가입·5-2 로그인/로그아웃·5-3 회원 장바구니 서비스·5-4 화면 연결 구현 반영 2026-10-01 · 5-5 보안 점검·5-6 README·`bootRunTest`·의존성 확인 반영 2026-10-01 · 5-9 취약점 수정 버전 적용 반영 2026-10-10
 >
 > - 이 문서는 확정된 서비스 기획, 화면별 기능, 비즈니스 규칙, 예외 처리를 담습니다. 이 문서만으로 서비스 요구사항을 이해할 수 있도록 작성합니다.
 > - 규칙의 근거가 된 실제 API 응답 사실(필드, 건수, 오류 사례, 미검증 사항)은 [API_RESEARCH.md](API_RESEARCH.md)에 있습니다.
@@ -12,7 +12,9 @@
 >   - 구현 (Phase 5-2): 로그인·로그아웃(2-4절) — 세션 기반 폼 로그인, 로그인 후 `continue` 복귀, 로그인 상태의 인증 화면 접근 처리, 로그아웃(POST + CSRF), 머리글의 로그인 상태 표시
 >   - 구현 (Phase 5-3): 회원 장바구니 서비스(`MemberCartService`) — DB 저장, 담기·조회·수량 변경·삭제, 가격 비교 입력(`List<CartLine>`) 생성, 회원별 범위 제한, 회원 행 비관적 락. **컨트롤러·화면에는 아직 연결하지 않았습니다.**
 >   - 구현 (Phase 5-4): 회원 장바구니를 장바구니·가격 비교 화면에 연결(`CartService` 디스패치) — 비회원은 세션 장바구니, 로그인한 회원은 DB 장바구니, 자동 병합 없음, 로그아웃해도 DB 장바구니 유지. 회원은 인증 정보(`@AuthenticationPrincipal MemberUserDetails`)로만 정하고 요청 파라미터의 회원 ID는 쓰지 않습니다.
->   - 남은 Phase 5 범위: 5-5(보안 점검과 문서 정리). 존재하지 않는 회원의 조회와 변경 정책 차이는 2-2절의 "현재 구현의 한계"를 참고하세요.
+>   - 구현 (Phase 5-5): 보안 점검 — 재현된 보안 결함은 없었습니다(인증·세션·CSRF·`continue` 검증, 회원 장바구니 격리·수량 제한·동시 요청 확인, AI_COLLABORATION 1-17).
+>   - 구현 (Phase 5-6): `README.md` 작성, 테스트 DB 전용 실행 태스크 `bootRunTest`(6장), 의존성 취약점 확인(6장). 운영 환경 결정 사항(HTTPS, 쿠키, 세션 만료, 로그인 시도 제한)은 정하지 않았고 적용하지 않았습니다. 존재하지 않는 회원의 조회와 변경 정책 차이는 2-2절의 "현재 구현의 한계"를 참고하세요.
+>   - 구현 (Phase 5-9): 취약점 수정 버전 적용 — `build.gradle`에서 `tomcat.version` 10.1.60, `jackson-bom.version` 2.21.7, `log4j2.version` 2.25.5로 재정의(Spring Boot 3.5.16 유지)하고 `bootRunTest`를 `127.0.0.1`에만 바인딩했습니다. 적용 후 OSV 재조회에서 남은 취약점은 `spring-webmvc` 6.2.19의 2건이며 **해결되지 않았습니다**(6장). 또한 테이블을 통째로 비우는 `DataCollectorTest`가 삭제 전에 실제 연결 대상이 `martpick_test`인지 확인하는 안전장치(`TestDatabaseGuard`)를 추가했습니다(6장).
 
 ---
 
@@ -478,7 +480,28 @@ MartPick(마트픽)
 - 가격 비교 계산은 인증 로직과 분리하며, 장바구니(상품 ID·수량), 지역, 기준 조사일을 입력으로 사용합니다. 회원·인증 정보에 직접 의존하지 않습니다.
 - 4단계(비회원 화면)에서는 회원 인증이 없어 Spring Boot 기본 사용자 자동 설정(`UserDetailsServiceAutoConfiguration`)을 `application.yml`에서 제외했습니다. 5-2에서 회원 저장소 기반 `MemberUserDetailsService`를 추가했으며, **이 제외 설정은 유지합니다.** 자동 생성 기본 사용자(`user`)가 어떤 경우에도 생기지 않게 하려는 것입니다(`UserDetailsService`가 `MemberUserDetailsService` 하나뿐이고 `user`로 로그인할 수 없음을 `SecurityConfigTest`로 확인). 인증 주체는 회원 ID를 포함한 `MemberUserDetails`입니다.
 - 비밀번호 해시용 `PasswordEncoder`(BCrypt) 빈은 웹 환경에만 등록되는 `SecurityConfig`와 분리해 조건 없이 등록합니다. 웹 서버 없는 수집 실행에서도 `MemberService`가 만들어지기 때문입니다.
-- Spring Boot 3.5.x의 OSS 지원은 2026-06-30에 종료되었습니다(spring.io 공식 자료 기준, 상용 지원은 2032-06-30까지). 프로젝트 요구사항에 따라 3.5.x를 유지하며, 이 사실을 README에 명시합니다.
+- Spring Boot 3.5.x의 OSS 지원은 2026-06-30에 종료되었습니다(spring.io 공식 자료 기준, 상용 지원은 2032-06-30까지). 프로젝트 요구사항에 따라 3.5.x를 유지하며, 이 사실은 README에 명시했습니다.
+  - 확인 출처와 날짜: 공식 프로젝트 API `https://api.spring.io/projects/spring-boot/generations`, 2026-10-01. 3.5.x는 OSS 2026-06-30·상용 2032-06-30, 4.0.x는 OSS 2026-12-31·상용 2027-12-31, 4.1.x는 OSS 2027-07-31·상용 2028-07-31입니다. Maven Central에 배포된 3.5 라인 최신은 3.5.16입니다(2026-10-01 확인).
+- 테스트 DB로 앱을 띄울 때는 `./gradlew.bat bootRunTest [-PtestServerPort=포트]`를 사용합니다(일반 `bootRun`은 개발 DB `martpick`에 연결). `application-test.yml`은 `src/test/resources`에만 있어 `bootRun` 클래스패스에 없으므로, `bootRun`에 프로필만 `test`로 주면 테스트 DB가 아니라 개발 DB에 연결됩니다(5-5 점검 중 실제 발생, AI_COLLABORATION 3-2).
+  - `bootRunTest`는 접속 URL을 시스템 속성으로 `martpick_test`에 고정하고, 호스트는 `localhost`/`127.0.0.1`만 허용합니다. `--args`·JVM 인자는 거부하고, 자식 프로세스에는 허용 목록 환경변수만 전달하며, 설정 파일 위치를 `classpath:/application.yml`로 고정합니다. 서버는 `127.0.0.1`에만 바인딩해 이 PC에서만 접속할 수 있습니다(`server.address`).
+  - 한계: Gradle 단계에서 입력만 검사하며 Spring Boot가 최종 해석한 값을 비교하지는 않습니다. 이 태스크를 거치지 않는 실행(IDE, `java -jar`, 프로필만 지정한 `bootRun`)의 접속 대상은 보장하지 않으며, 그런 방식으로 띄운 서버에서는 기동 로그의 `Database:` 줄을 확인하기 전에 DB 쓰기 검증을 하지 않습니다.
+- 테스트의 테이블 전체 삭제 보호(2026-10-10): `DataCollectorTest`는 매번 테스트 DB의 `region`·`store`·`product`·`price`·`member`·`cart_item`·`collection_run`을 전체 삭제합니다. 삭제 전에 `TestDatabaseGuard`(`src/test/java/com/martpick/testsupport`)가 실제 연결 대상을 확인하며, 삭제는 이 도우미가 검증 후에만 수행합니다(테이블 목록·순서·SQL은 기존과 같음).
+  - 검증 기준: 연결된 서버가 알려주는 `current_database()`와 드라이버가 보고하는 URL의 DB 이름이 **모두 `martpick_test`와 정확히 같아야** 합니다. 다르거나 확인할 수 없으면(조회 실패, 값 없음, URL 형식 오류) 아무것도 삭제하지 않고 `IllegalStateException`으로 즉시 실패합니다. 접속 URL이 환경변수(`MARTPICK_TEST_DB_NAME`, `SPRING_DATASOURCE_URL`)나 시스템 속성(`-Dspring.datasource.url`)으로 바뀌어도 설정값이 아니라 실제 연결을 보므로 막힙니다. 실패 메시지에는 두 DB 이름만 담고 접속 URL 전체는 담지 않습니다.
+  - 검증: `TestDatabaseGuardTest` 25개 — DB에 연결하지 않고 `JdbcTemplate`을 대체해 잘못된 대상에서 삭제 SQL이 한 번도 실행되지 않음을 확인했고, 구현을 일부러 망가뜨린 변형 3종(URL 검사 제거, 검증 후 삭제, 정확 일치 대신 포함 검사)에서 각각 10·21·3개가 실패했습니다. 또한 `martpick_test`의 스키마를 복제한 임시 DB(`martpick_guardcheck`, 확인 후 삭제)에 표식 행을 넣고 위 세 경로로 `DataCollectorTest`를 실행하자 45개 모두가 안전장치 메시지로 실패했고 표식 행은 그대로였습니다. 개발 DB로 직접 연결해 실행하는 검증은 하지 않았습니다.
+  - 한계: 이 검증은 `DataCollectorTest`의 전체 삭제에만 적용됩니다. 다른 DB 테스트는 롤백되거나 자기가 만든 데이터만 삭제하지만 연결 대상 검증은 없습니다. 테스트 컨텍스트가 시작될 때 Flyway가 연결된 DB에 먼저 마이그레이션을 적용하며, 이 시점은 검증보다 앞섭니다.
+- 의존성 취약점 확인과 처리: 런타임 클래스패스 72개 라이브러리의 `group:artifact:version` 좌표만 OSV API(`api.osv.dev`)로 조회했습니다(키·환경변수·접속 정보는 보내지 않음). GitHub Dependabot 알림은 이 비공개 저장소에서 꺼져 있어(HTTP 403) 확인할 수 없었고, 저장소 설정은 바꾸지 않았습니다.
+  - 영향 판단은 두 가지로 구분합니다. **조건 불충족 확인(정적)**은 취약점이 요구하는 설정·어노테이션·모듈이 이 앱과 클래스패스에 없음을 소스·jar 검색으로 확인한 경우입니다. **추가 확인 필요**는 진입점이 보이지 않지만 전수 확인은 하지 못한 경우입니다. 어느 쪽도 실제 공격 시도로 확인한 것은 아니며 "영향 없음"으로 단정하지 않습니다.
+  - **2026-10-01 조회** — 3개 라이브러리 13건:
+    - `tomcat-embed-core` 10.1.55 3건(GHSA-9xv2-5v5q-p794 DIGEST 인증, GHSA-gcx9-497g-6cp6 보안 제약 선언 순서, GHSA-h3x4-894j-xpx5 FORM 인증): 모두 Tomcat 컨테이너의 인증·보안 제약 기능에 관한 것이며 **조건 불충족 확인(정적)**. 이 앱은 `web.xml`이나 `j_security_check`·`login-config` 등 컨테이너 인증을 쓰지 않고 Spring Security가 인증을 처리합니다(소스 검색 결과 없음). Boot의 임베디드 Tomcat·웹 서블릿 자동 구성 클래스에는 `LoginConfig`·`SecurityConstraint`·`Authenticator`·`Realm` 문자열이 없고, Tomcat의 `FixContextListener`는 로그인 설정이 없으면 `NonLoginAuthenticator`를 설치합니다(jar 문자열 검색). 실행 중인 Tomcat 객체를 직접 점검하지는 않았고, 외부 Tomcat에 war로 배포하면 이 전제가 달라집니다.
+    - `jackson-databind` 2.21.4 9건: 모두 신뢰할 수 없는 JSON을 `ObjectMapper`가 특정 타입으로 역직렬화하는 경우에 발생합니다. 특정 어노테이션·설정을 전제로 하는 6건(GHSA-5gvw-p9qm-jgwh, GHSA-5jmj-h7xm-6q6v, GHSA-cxp5-3px4-pw24, GHSA-gx83-3vf8-gh7j, GHSA-mhm7-754m-9p8w, GHSA-wv8q-qhhj-9h54)은 **조건 불충족 확인(정적)**(앱에 Jackson import와 `@Json*` 어노테이션이 없음)이고, 기본 매퍼로 `Duration`·`InetAddress`·`Path` 필드에 JSON 문자열을 바인딩할 때 발생하는 3건(GHSA-q4xh-88c3-wmh7, GHSA-vvgp-rfg2-7rr6, GHSA-wjgm-6hv5-3cvf)은 **추가 확인 필요**였습니다. JSON 입력 진입점은 찾지 못했습니다(컨트롤러에 `@RequestBody`·`@ResponseBody`·`@RestController`·`HttpEntity`·`@RequestPart`가 없고, 공공데이터 응답은 바이트로 받아 XML 파서로 읽으며, 테스트 DB 서버에 JSON 본문을 보낸 요청이 어느 POST 엔드포인트에서도 바인딩되지 않음). 서드파티 내부 사용처까지 전수 검증하지는 못했습니다.
+    - `log4j-api` 2.24.3 1건(GHSA-qv9r-c865-cp47): **조건 불충족 확인(정적)**. `log4j-to-slf4j` 브리지로만 들어오며 `log4j-core`와 `json-template-layout`이 클래스패스에 없고 소스에도 `MapMessage`·log4j 사용이 없습니다.
+  - **2026-10-10 재조회** — 현재 버전 기준으로 다시 조회하자 4건이 추가로 보고되었습니다(OSV 데이터가 갱신된 것으로 보이며, 10월 1일 조회 결과에는 없었습니다).
+    - `jackson-core` 2.21.4 2건(수정 2.21.7): GHSA-7hhh-6rmp-j9qf(`createParser(DataInput)` 파서의 비정상 토큰 메시지 무제한 증가, DoS) — **조건 불충족 확인(정적)**(앱에 Jackson 사용 없음). GHSA-p6pp-m3f8-5c89(문자열의 숫자 변환 `looksLikeValidNumber`의 정규식 backtracking, ReDoS) — **추가 확인 필요**(JSON 입력 진입점은 찾지 못함).
+    - `spring-webmvc` 6.2.19 2건: GHSA-j9f9-w8pj-32f8(SSE에서 뷰 조각을 렌더링할 때 스트림 손상), GHSA-pc63-qcmh-9cmg(`XsltView`를 쓰고 `/**` 매핑에서 뷰 이름이 명시되지 않을 때 SSRF·RCE). 소스에 `SseEmitter`·`event-stream`·`XsltView` 사용이 없어 **정적 분석에서 발생 조건을 찾지 못했습니다.** 그러나 6.2.x에는 수정 버전이 없고(영향 범위 6.2.0~6.2.19, 수정은 7.0.9) Maven Central에도 6.2.19가 최신이므로 **해결되지 않았고 해결된 것으로 표시하지 않습니다.**
+  - **처리(2026-10-10)**: `build.gradle`에서 `tomcat.version` 10.1.60, `jackson-bom.version` 2.21.7, `log4j2.version` 2.25.5를 재정의했습니다(Spring Boot 3.5.16 유지, 의존성 추가·제거 없음). 런타임·테스트 클래스패스 모두에서 `tomcat-embed-core/el/websocket` 10.1.60, `jackson-core/databind` 등 Jackson 모듈 2.21.7(`jackson-annotations`는 2.21 그대로), `log4j-api`/`log4j-to-slf4j` 2.25.5가 적용된 것을 확인했습니다. Boot 3.5.16이 시험한 조합이 아니므로 전체 테스트로 확인했습니다(아래).
+  - **검증**: 전체 `cleanTest test` 425개 통과(실패·오류·건너뜀 0). 실제 Tomcat 10.1.60을 쓰는 `LoginGuardWebServerTest` 5개와 회원 장바구니·가격 비교 회귀 테스트(`MemberCartFlowTest` 16, `MemberCartConcurrencyTest` 10, `GuestCompareFlowTest` 3, `ComparisonServiceTest` 19 등)가 통과했습니다. 재정의 후 72개를 다시 조회한 OSV 결과는 `spring-webmvc` 6.2.19의 2건뿐입니다. OSV는 알려진 취약점 데이터베이스의 조회 결과이므로 이후 새로 공개되는 항목은 반영되지 않습니다.
+  - **남은 위험과 향후 필요**: `spring-webmvc` 2건은 위와 같이 미해결입니다. Spring Framework 6.2.x의 수정 버전이 공개 배포되지 않으므로, 이를 해결하려면 Spring Framework 7.0.9 이상, 즉 Spring Boot 4.x 업그레이드가 필요합니다(Boot 4.0.x OSS 지원은 2026-12-31, 4.1.x는 2027-07-31까지). 이는 요구사항(3.5.x) 변경과 Tomcat 11·Jackson 3 기본화·스타터 모듈화 등 메이저 마이그레이션을 수반하므로 별도 결정 사항이며 진행하지 않았습니다.
+- 운영 환경에서 아직 결정하지 않은 사항(적용되어 있지 않음): HTTPS와 프록시 뒤 forward-headers, 세션 쿠키 `Secure`·`SameSite`, 세션 만료 명시(현재 서버 기본값), 로그인 시도 제한, CSP 등 추가 보안 헤더, 운영 DB 접속 정보 주입 방식과 로컬 기본 비밀번호 폴백 제거 방식.
 
 ---
 
