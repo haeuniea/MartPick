@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('요청을 처리할 수 없습니다')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header(null)}"></header>
+
+<main th:replace="~{fragments/layout :: errorPanel(${status}, '요청을 처리할 수 없습니다', '입력한 내용이나 주소를 확인하고 다시 시도해 주세요.')}"></main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+</body>
+</html>

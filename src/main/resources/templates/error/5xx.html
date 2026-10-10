@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('일시적인 오류가 발생했습니다')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header(null)}"></header>
+
+<main th:replace="~{fragments/layout :: errorPanel(${status}, '일시적인 오류가 발생했습니다', '잠시 후 다시 시도해 주세요. 문제가 계속되면 상품 찾기 화면부터 다시 시작해 주세요.')}"></main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+</body>
+</html>

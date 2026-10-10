@@ -177,7 +177,7 @@ class LoginFlowTest {
 	void GET_로그아웃은_허용하지_않고_로그인_상태가_유지된다() throws Exception {
 		MockHttpSession session = loggedIn("loginA1", PASSWORD_A);
 
-		mockMvc.perform(get("/logout").session(session)).andExpect(status().isForbidden());
+		mockMvc.perform(get("/logout").session(session)).andExpect(status().isNotFound());
 
 		assertThat(session.isInvalid()).isFalse();
 		assertThat(principalOf(session)).isNotNull();

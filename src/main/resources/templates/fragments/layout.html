@@ -65,6 +65,22 @@
 	</div>
 </section>
 
+<!-- 오류 화면 본문. code가 null이면 오류 코드 줄을 표시하지 않는다. 제목과 설명은 고정 문구만 받으며 오류 내용을 담지 않는다. -->
+<main class="container page page--tight" th:fragment="errorPanel(code, title, text)">
+	<div class="empty" role="alert">
+		<span class="empty__icon"><svg th:replace="~{fragments/icons :: alert}"></svg></span>
+		<p class="empty__title" th:text="${title}">페이지를 찾을 수 없습니다</p>
+		<p class="empty__text" th:text="${text}">주소가 올바른지 확인해 주세요.</p>
+		<p class="empty__text" th:if="${code != null}" th:text="|오류 코드 ${code}|">오류 코드 404</p>
+		<a class="button button--primary" th:href="@{/products}">
+			<svg th:replace="~{fragments/icons :: search}"></svg><span>상품 찾기로 이동</span>
+		</a>
+		<a class="button button--secondary" th:href="@{/cart}">
+			<svg th:replace="~{fragments/icons :: cart}"></svg><span>장바구니 보기</span>
+		</a>
+	</div>
+</main>
+
 <footer class="site-footer" th:fragment="footer">
 	<div class="container">
 		<p>가격 출처: 한국소비자원 생필품 가격 정보 (공공데이터포털)</p>

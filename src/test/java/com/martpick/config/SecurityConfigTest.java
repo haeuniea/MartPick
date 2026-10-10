@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -15,10 +16,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Import;
+import org.springframework.stereotype.Controller;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 import com.martpick.member.MemberUserDetailsService;
 
@@ -28,7 +34,25 @@ import com.martpick.member.MemberUserDetailsService;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(SecurityConfigTest.InternalProbeController.class)
 class SecurityConfigTest {
+
+	/** 컨트롤러는 있지만 허용 목록에 없는 경로를 만들어, 허용 목록 밖은 여전히 거부되는지 확인하는 테스트 전용 컨트롤러 */
+	@Controller
+	static class InternalProbeController {
+
+		@GetMapping("/internal-probe")
+		@ResponseBody
+		String read() {
+			return "internal-secret";
+		}
+
+		@PostMapping("/internal-probe")
+		@ResponseBody
+		String write() {
+			return "internal-secret";
+		}
+	}
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -70,12 +94,43 @@ class SecurityConfigTest {
 
 	@Test
 	void 허용하지_않은_경로는_로그인_화면으로_보내지_않고_거부하며_세션도_만들지_않는다() throws Exception {
-		MvcResult result = mockMvc.perform(get("/admin")).andExpect(status().isForbidden()).andReturn();
+		MvcResult result = mockMvc.perform(get("/admin")).andExpect(status().isNotFound()).andReturn();
 
 		assertThat(result.getResponse().getRedirectedUrl()).isNull();
 		assertThat(result.getRequest().getSession(false)).isNull();
 		mockMvc.perform(get("/cart/items")).andExpect(status().isMethodNotAllowed());
-		mockMvc.perform(get("/logout")).andExpect(status().isForbidden());
+		mockMvc.perform(get("/logout")).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void 컨트롤러가_없는_허용_목록_밖_경로는_404이고_로그인한_사용자도_같다() throws Exception {
+		for (String path : new String[] {"/admin", "/actuator/health", "/products/", "/logout"}) {
+			mockMvc.perform(get(path)).andExpect(status().isNotFound());
+			mockMvc.perform(get(path).with(user("tester01"))).andExpect(status().isNotFound());
+		}
+	}
+
+	@Test
+	void 컨트롤러가_있어도_허용_목록에_없으면_여전히_403으로_거부하고_내용을_돌려주지_않는다() throws Exception {
+		for (boolean signedIn : new boolean[] {false, true}) {
+			var read = get("/internal-probe");
+			var write = post("/internal-probe").with(csrf());
+			if (signedIn) {
+				read = read.with(user("tester01"));
+				write = write.with(user("tester01"));
+			}
+			mockMvc.perform(read).andExpect(status().isForbidden())
+					.andExpect(content().string(not(containsString("internal-secret"))));
+			mockMvc.perform(write).andExpect(status().isForbidden())
+					.andExpect(content().string(not(containsString("internal-secret"))));
+		}
+	}
+
+	@Test
+	void 허용_목록_밖_경로에서_CSRF_토큰이_없는_요청은_경로와_관계없이_403이다() throws Exception {
+		mockMvc.perform(post("/internal-probe")).andExpect(status().isForbidden());
+		mockMvc.perform(post("/nope")).andExpect(status().isForbidden());
+		mockMvc.perform(post("/nope").with(user("tester01"))).andExpect(status().isForbidden());
 	}
 
 	@Test

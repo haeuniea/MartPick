@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('페이지를 찾을 수 없습니다')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header(null)}"></header>
+
+<main th:replace="~{fragments/layout :: errorPanel(404, '페이지를 찾을 수 없습니다', '주소가 올바른지 확인해 주세요. 주소를 직접 입력했다면 오타가 없는지 확인해 보세요.')}"></main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+</body>
+</html>

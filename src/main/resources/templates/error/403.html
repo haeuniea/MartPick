@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('접근할 수 없습니다')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header(null)}"></header>
+
+<main th:replace="~{fragments/layout :: errorPanel(403, '접근할 수 없습니다', '허용되지 않은 요청이거나 화면을 연 지 오래되어 요청을 확인할 수 없습니다. 화면을 새로 열어 다시 시도해 주세요.')}"></main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+</body>
+</html>
