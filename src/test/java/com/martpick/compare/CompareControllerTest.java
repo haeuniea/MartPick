@@ -13,10 +13,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -33,6 +39,7 @@ import com.martpick.member.MemberUserDetails;
 class CompareControllerTest {
 
 	private static final String SEOUL = "020100000";
+	private static final String BUSAN = "020500000";
 	private static final LocalDate INSPECT_DAY = LocalDate.of(2026, 9, 25);
 	private static final ProductInfo RAMEN = new ProductInfo(1000L, "팔도 왕뚜껑(110g)", "110", "G");
 	private static final ProductInfo RICE = new ProductInfo(292L, "햇반(210g)", "210", "G");
@@ -201,6 +208,134 @@ class CompareControllerTest {
 		then(comparisonService).should(never()).compare(SEOUL, CART);
 	}
 
+	@Test
+	void 결과_화면_상단에_지역_선택과_다시_비교_버튼을_보여_주고_현재_지역을_선택해_둔다() throws Exception {
+		given(comparisonService.comparableRegions())
+				.willReturn(List.of(new RegionOption(SEOUL, "서울특별시"), new RegionOption(BUSAN, "부산광역시")));
+		givenResult(List.of(complete(100L, "가마트", "주소", 1000, 1000, 1000)), List.of());
+
+		String form = regionForm(render());
+
+		assertThat(form).contains("action=\"/compare\"", "method=\"get\"", "name=\"areaCode\"", "다시 비교");
+		assertThat(form).contains("<option value=\"020100000\" selected=\"selected\">서울특별시</option>");
+		assertThat(form).contains("<option value=\"020500000\">부산광역시</option>");
+		assertThat(form).doesNotContain("value=\"\"").doesNotContain("_csrf");
+	}
+
+	@Test
+	void 다른_지역을_고르면_같은_장바구니로_그_지역을_다시_비교하고_그_지역을_선택해_둔다() throws Exception {
+		given(comparisonService.comparableRegions())
+				.willReturn(List.of(new RegionOption(SEOUL, "서울특별시"), new RegionOption(BUSAN, "부산광역시")));
+		given(comparisonService.compare(BUSAN, CART)).willReturn(new ComparisonResult(INSPECT_DAY, BUSAN, "부산광역시",
+				List.of(complete(300L, "부산마트", "부산 주소", 900, 900, 900)), List.of()));
+
+		String html = mockMvc.perform(get("/compare").param("areaCode", BUSAN))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		then(comparisonService).should().compare(BUSAN, CART);
+		assertThat(html).contains("부산마트").contains("<strong>부산광역시</strong>");
+		assertThat(regionForm(html)).contains("<option value=\"020500000\" selected=\"selected\">부산광역시</option>")
+				.contains("<option value=\"020100000\">서울특별시</option>");
+	}
+
+	@Test
+	void 지역_선택은_로그인한_회원의_결과_화면에도_같은_방식으로_보인다() throws Exception {
+		MemberUserDetails member = new MemberUserDetails(7L, "tester01", "hash");
+		List<CartLine> memberCart = List.of(new CartLine(224L, 3));
+		given(cartService.lines(member)).willReturn(memberCart);
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption(SEOUL, "서울특별시")));
+		given(comparisonService.compare(SEOUL, memberCart))
+				.willReturn(new ComparisonResult(INSPECT_DAY, SEOUL, "서울특별시", List.of(), List.of()));
+
+		String html = mockMvc.perform(get("/compare").with(user(member)).param("areaCode", SEOUL))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(regionForm(html)).contains("action=\"/compare\"", "다시 비교");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {1, 9, 10})
+	void 완전_비교가_10곳_이하이면_펼치기_없이_모두_보여_준다(int count) throws Exception {
+		List<CompleteStore> stores = completeStores(count);
+		givenResult(stores, List.of());
+
+		String html = render();
+		String section = section(html, "complete-stores");
+
+		assertThat(storeNames(section)).containsExactlyElementsOf(names(stores));
+		assertThat(section).doesNotContain(MORE_MARKER).doesNotContain("나머지").doesNotContain("처음 10곳");
+		assertThat(html).contains("완전 비교 " + count + "곳");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {11, 12, 25, 105})
+	void 완전_비교가_11곳_이상이면_처음_10곳만_보여_주고_나머지는_펼쳐_본다(int count) throws Exception {
+		List<CompleteStore> stores = completeStores(count);
+		givenResult(stores, List.of());
+
+		String html = render();
+		String section = section(html, "complete-stores");
+		int more = section.indexOf(MORE_MARKER);
+
+		assertThat(more).isPositive();
+		assertThat(section.indexOf(MORE_MARKER, more + 1)).as("펼치기는 영역마다 하나").isNegative();
+		assertThat(storeNames(section.substring(0, more))).containsExactlyElementsOf(names(stores).subList(0, 10));
+		assertThat(storeNames(section.substring(more))).containsExactlyElementsOf(names(stores).subList(10, count));
+		assertThat(section).contains("나머지 " + (count - 10) + "곳 보기");
+		assertThat(section).contains("처음 10곳");
+		assertThat(section.substring(more, more + MORE_MARKER.length() + 6)).doesNotContain("open");
+		assertThat(countOf(section, "<li class=\"store-card")).isEqualTo(count);
+		assertThat(html).contains("완전 비교 " + count + "곳");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {1, 10})
+	void 부분_비교가_10곳_이하이면_펼치기_없이_모두_보여_준다(int count) throws Exception {
+		List<PartialStore> stores = partialStores(count);
+		givenResult(List.of(complete(100L, "가마트", "주소", 1000, 1000, 1000)), stores);
+
+		String html = render();
+		String section = section(html, "partial-stores");
+
+		assertThat(storeNames(section)).containsExactlyElementsOf(partialNames(stores));
+		assertThat(section).doesNotContain(MORE_MARKER).doesNotContain("나머지");
+		assertThat(html).contains("부분 비교 " + count + "곳");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {11, 25})
+	void 부분_비교가_11곳_이상이면_기존_정렬_그대로_처음_10곳만_보여_주고_나머지는_펼쳐_본다(int count) throws Exception {
+		List<PartialStore> stores = partialStores(count);
+		givenResult(List.of(), stores);
+
+		String html = render();
+		String section = section(html, "partial-stores");
+		int more = section.indexOf(MORE_MARKER);
+
+		assertThat(more).isPositive();
+		assertThat(storeNames(section.substring(0, more))).containsExactlyElementsOf(partialNames(stores).subList(0, 10));
+		assertThat(storeNames(section.substring(more))).containsExactlyElementsOf(partialNames(stores).subList(10, count));
+		assertThat(section).contains("나머지 " + (count - 10) + "곳 보기");
+		assertThat(countOf(section, "<li class=\"store-card")).isEqualTo(count);
+		assertThat(html).doesNotContain("<ol").doesNotContainPattern("\\d+위");
+	}
+
+	@Test
+	void 완전_비교와_부분_비교가_모두_많아도_각_영역에서_따로_접고_전체_판매점을_남긴다() throws Exception {
+		List<CompleteStore> completes = completeStores(30);
+		List<PartialStore> partials = partialStores(15);
+		givenResult(completes, partials);
+
+		String html = render();
+
+		assertThat(countOf(html, MORE_MARKER)).isEqualTo(2);
+		assertThat(countOf(html, "<li class=\"store-card")).isEqualTo(45);
+		assertThat(html).contains("완전 비교 30곳", "부분 비교 15곳", "나머지 20곳 보기", "나머지 5곳 보기");
+		assertThat(html).doesNotContain("<ol").doesNotContainPattern("\\d+위");
+		assertThat(storeNames(section(html, "complete-stores"))).containsExactlyElementsOf(names(completes));
+		assertThat(storeNames(section(html, "partial-stores"))).containsExactlyElementsOf(partialNames(partials));
+	}
+
 	private void assertRedirectWithError(Reason reason, String message) throws Exception {
 		willThrow(new InvalidComparisonRequestException(reason, "내부 메시지"))
 				.given(comparisonService).compare(SEOUL, CART);
@@ -221,6 +356,48 @@ class CompareControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(view().name("compare"))
 				.andReturn().getResponse().getContentAsString();
+	}
+
+	private static final String MORE_MARKER = "class=\"price-details store-more\"";
+	private static final Pattern STORE_NAME = Pattern.compile("<h3 class=\"store-card__name\"[^>]*>([^<]*)</h3>");
+
+	private static List<CompleteStore> completeStores(int count) {
+		return IntStream.range(0, count)
+				.mapToObj(i -> complete(1000L + i, String.format("완전마트%03d", i), "주소", 1000, 1000, 1000 + i))
+				.toList();
+	}
+
+	private static List<PartialStore> partialStores(int count) {
+		return IntStream.range(0, count)
+				.mapToObj(i -> partial(5000L + i, String.format("부분마트%03d", i), 100 + 2 * i))
+				.toList();
+	}
+
+	private static List<String> names(List<CompleteStore> stores) {
+		return stores.stream().map(CompleteStore::name).toList();
+	}
+
+	private static List<String> partialNames(List<PartialStore> stores) {
+		return stores.stream().map(PartialStore::name).toList();
+	}
+
+	private static List<String> storeNames(String html) {
+		Matcher matcher = STORE_NAME.matcher(html);
+		List<String> names = new ArrayList<>();
+		while (matcher.find()) {
+			names.add(matcher.group(1));
+		}
+		return names;
+	}
+
+	private static int countOf(String html, String token) {
+		return (html.length() - html.replace(token, "").length()) / token.length();
+	}
+
+	private static String regionForm(String html) {
+		int start = html.indexOf("region-switch");
+		assertThat(start).as("지역 변경 폼").isNotNegative();
+		return html.substring(start, html.indexOf("</form>", start));
 	}
 
 	private static String section(String html, String id) {

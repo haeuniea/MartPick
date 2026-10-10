@@ -1450,3 +1450,23 @@ summary:focus-visible {
 .cart-guest-notice a {
 	font-weight: 700;
 }
+
+/* 비교 결과: 지역 변경 폼과 접힌 판매점 목록 */
+.region-switch {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--space-3);
+	margin-top: var(--space-5);
+}
+
+.region-switch__field {
+	display: flex;
+	flex: 1 1 220px;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.store-more > .store-list {
+	margin-top: var(--space-4);
+}

@@ -15,12 +15,15 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * 장바구니로 선택 지역의 판매점 가격을 비교한다. 비회원은 세션 장바구니를, 로그인한 회원은 DB 장바구니를 입력으로 쓴다.
- * 조회만 하므로 GET으로 처리한다.
+ * 조회만 하므로 GET으로 처리한다. 결과 화면에서 다른 지역으로 다시 비교하는 요청도 같은 GET이며, 지역은 요청에만 쓰고 저장하지 않는다.
  * 비교 요청 오류는 장바구니 화면으로 돌려보내 사유를 안내한다 (PROJECT_SPEC 5장).
  */
 @Controller
 @RequiredArgsConstructor
 public class CompareController {
+
+	/** 결과 화면에서 완전 비교와 부분 비교를 각각 처음 몇 곳까지 펼쳐 보여 줄지. 나머지는 접어서 보여 준다. */
+	static final int PREVIEW_COUNT = 10;
 
 	private final ComparisonService comparisonService;
 	private final CartService cartService;
@@ -36,6 +39,8 @@ public class CompareController {
 			return "redirect:/cart";
 		}
 		model.addAttribute("result", result);
+		model.addAttribute("regions", comparisonService.comparableRegions());
+		model.addAttribute("previewCount", PREVIEW_COUNT);
 		model.addAttribute("inspectDay", result.inspectDay());
 		return "compare";
 	}
