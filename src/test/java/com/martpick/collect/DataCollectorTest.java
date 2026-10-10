@@ -49,6 +49,7 @@ import com.martpick.publicdata.PublicDataApiException;
 import com.martpick.publicdata.PublicDataClient;
 import com.martpick.publicdata.RegionRow;
 import com.martpick.publicdata.StoreRow;
+import com.martpick.testsupport.TestDatabaseGuard;
 
 /**
  * 수집기가 직접 트랜잭션을 관리하므로 테스트 트랜잭션을 쓰지 않고(NOT_SUPPORTED),
@@ -886,13 +887,8 @@ class DataCollectorTest {
 				jdbc.queryForObject("select count(*) from price", Long.class));
 	}
 
+	/** 테이블을 통째로 비우므로, 연결 대상이 테스트 DB임을 확인한 뒤에만 삭제한다. */
 	private void cleanTables() {
-		jdbc.update("delete from collection_run");
-		jdbc.update("delete from cart_item");
-		jdbc.update("delete from member");
-		jdbc.update("delete from price");
-		jdbc.update("delete from store");
-		jdbc.update("delete from product");
-		jdbc.update("delete from region");
+		TestDatabaseGuard.deleteAllRows(jdbc, "collection_run", "cart_item", "member", "price", "store", "product", "region");
 	}
 }
