@@ -4,6 +4,12 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
+// Spring Boot 3.5.x는 OSS 지원이 종료되어 BOM 갱신을 기대할 수 없으므로, 보고된 취약점의 수정 버전으로 재정의한다 (PROJECT_SPEC 6장).
+// Boot 3.5.16이 시험한 조합이 아니므로 변경 시 전체 테스트로 확인한다.
+ext['tomcat.version'] = '10.1.60'
+ext['jackson-bom.version'] = '2.21.7'
+ext['log4j2.version'] = '2.25.5'
+
 group = 'com.martpick'
 version = '0.0.1-SNAPSHOT'
 
@@ -44,4 +50,49 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 	systemProperty 'spring.profiles.active', 'test'
+}
+
+// 테스트 DB(martpick_test)로만 앱을 띄우는 실행 태스크. 일반 bootRun은 개발 DB(martpick)를 쓴다.
+// application-test.yml은 src/test/resources에만 있어 bootRun 클래스패스에 없으므로 이 태스크는 그 파일에 기대지 않고,
+// 접속 URL을 시스템 속성으로 직접 지정한다. DB 이름은 docker/postgres/init/01-create-test-database.sql의 martpick_test로 고정한다.
+// 덮어쓰기 경로를 닫는다: 명령행 인자 거부, 자식 프로세스 환경변수는 허용 목록만 전달, 설정 파일 위치 고정.
+// 서버는 127.0.0.1에만 바인딩해 같은 네트워크의 다른 PC가 테스트 서버에 접속하지 못하게 한다.
+tasks.register('bootRunTest', org.springframework.boot.gradle.tasks.run.BootRun) {
+	group = 'application'
+	description = '테스트 DB(martpick_test)에 연결해 앱을 실행한다. 사용: ./gradlew.bat bootRunTest [-PtestServerPort=18080]'
+	mainClass = 'com.martpick.MartPickApplication'
+	classpath = sourceSets.main.runtimeClasspath
+	doFirst { t ->
+		def fail = { String why -> throw new GradleException('bootRunTest 중단: ' + why) }
+		if (!t.args.isEmpty()) {
+			fail('--args를 지원하지 않습니다. 명령행 인자로 접속 정보가 덮어써질 수 있습니다.')
+		}
+		if (!t.jvmArgs.isEmpty()) {
+			fail('JVM 인자를 지원하지 않습니다.')
+		}
+		def host = System.getenv('MARTPICK_DB_HOST') ?: 'localhost'
+		def port = System.getenv('MARTPICK_DB_PORT') ?: '5432'
+		def serverPort = project.findProperty('testServerPort')?.toString() ?: '8080'
+		if (!(host in ['localhost', '127.0.0.1'])) {
+			fail("MARTPICK_DB_HOST가 로컬이 아닙니다: ${host}")
+		}
+		if (!(port ==~ /\d{1,5}/) || !(serverPort ==~ /\d{4,5}/)) {
+			fail('포트는 숫자여야 합니다.')
+		}
+		def url = "jdbc:postgresql://${host}:${port}/martpick_test"
+
+		def keep = ['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'MARTPICK_DB_USER', 'MARTPICK_DB_PASSWORD']
+		def dropped = System.getenv().keySet().findAll { k ->
+			!(k.toUpperCase() in keep) && k.toUpperCase() ==~ /(SPRING_|MARTPICK_|DATA_GO_KR_).*|.*JAVA_(TOOL_)?OPTIONS/
+		}
+		t.environment = System.getenv().findAll { k, v -> k.toUpperCase() in keep }
+		t.systemProperty 'spring.datasource.url', url
+		t.systemProperty 'spring.config.location', 'classpath:/application.yml'
+		t.systemProperty 'server.port', serverPort
+		t.systemProperty 'server.address', '127.0.0.1'
+		logger.lifecycle("bootRunTest DB 대상: ${url} (서버 127.0.0.1:${serverPort}, 이 PC에서만 접속 가능)")
+		if (dropped) {
+			logger.lifecycle("전달하지 않은 환경변수(이름만): ${dropped.sort().join(', ')}")
+		}
+	}
 }
