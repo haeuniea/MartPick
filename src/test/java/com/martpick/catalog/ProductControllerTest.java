@@ -217,6 +217,44 @@ class ProductControllerTest {
 				.andExpect(content().string(containsString("&lt;script&gt;")));
 	}
 
+	@Test
+	void 사용할_수_없는_문자가_있는_검색어는_400과_안내를_보여_주고_전체_상품_첫_화면을_표시한다() throws Exception {
+		given(productService.search("마트픽\u0000", 1)).willThrow(new InvalidSearchKeywordException());
+		given(productService.search(null, 1)).willReturn(onePage(new ProductView(224L, "서울우유 흰우유(1L)", null)));
+
+		mockMvc.perform(get("/products").param("keyword", "마트픽\u0000"))
+				.andExpect(status().isBadRequest())
+				.andExpect(view().name("products"))
+				.andExpect(model().attribute("keyword", ""))
+				.andExpect(content().string(containsString("검색어에 사용할 수 없는 문자가 포함되어 있습니다.")))
+				.andExpect(content().string(containsString("서울우유 흰우유(1L)")))
+				.andExpect(content().string(not(containsString("\u0000"))))
+				.andExpect(content().string(not(containsString("value=\"마트픽"))));
+	}
+
+	@Test
+	void 잘못된_검색어_다음_요청의_페이지_번호는_유지한다() throws Exception {
+		given(productService.search("\u0001", 3)).willThrow(new InvalidSearchKeywordException());
+		given(productService.search(null, 3)).willReturn(new ProductPage(
+				List.of(new ProductView(224L, "서울우유 흰우유(1L)", null)), 3, 5, 150));
+
+		mockMvc.perform(get("/products").param("keyword", "\u0001").param("page", "3"))
+				.andExpect(status().isBadRequest())
+				.andExpect(content().string(containsString("3 / 5 페이지")));
+	}
+
+	@Test
+	void 정상_검색어와_빈_검색어는_400이_아니다() throws Exception {
+		given(productService.search("우유", 1)).willReturn(onePage());
+		given(productService.search("", 1)).willReturn(onePage());
+		given(productService.search(null, 1)).willReturn(onePage());
+
+		mockMvc.perform(get("/products").param("keyword", "우유")).andExpect(status().isOk())
+				.andExpect(content().string(not(containsString("사용할 수 없는 문자"))));
+		mockMvc.perform(get("/products").param("keyword", "")).andExpect(status().isOk());
+		mockMvc.perform(get("/products")).andExpect(status().isOk());
+	}
+
 	private static ProductPage onePage(ProductView... products) {
 		return new ProductPage(List.of(products), 1, products.length == 0 ? 0 : 1, products.length);
 	}

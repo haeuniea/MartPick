@@ -24,9 +24,13 @@ public class ProductService {
 
 	/**
 	 * @param page 1부터 시작하는 페이지 번호
+	 * @throws InvalidSearchKeywordException 앞뒤 공백을 제거한 검색어에 제어 문자가 있는 경우. DB를 조회하기 전에 거부한다.
 	 */
 	public ProductPage search(String keyword, int page) {
 		String normalized = StringUtils.hasText(keyword) ? keyword.strip() : null;
+		if (normalized != null && normalized.chars().anyMatch(Character::isISOControl)) {
+			throw new InvalidSearchKeywordException();
+		}
 		// 조회 offset이 int 범위를 넘지 않도록 상한을 둔다. 실제 페이지 수를 넘으면 아래에서 마지막 페이지로 보정한다.
 		int requested = Math.min(Math.max(page, 1), Integer.MAX_VALUE / PAGE_SIZE);
 		Page<Product> result = find(normalized, requested);
