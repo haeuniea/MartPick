@@ -55,6 +55,39 @@
 		</div>
 	</div>
 
+	<!-- 가격 정보가 없는 장바구니 상품 안내. 상품을 빼거나 계산에서 제외하지 않고 알려 주기만 한다.
+		전국 부재: 기준 조사일에 비교 대상 판매점 어디에도 가격이 없음. 지역 부재: 선택 지역에는 없지만 다른 지역에는 있음. -->
+	<div class="status-notice missing-notice" role="status"
+		th:if="${!#lists.isEmpty(result.noPriceNationwide) or !#lists.isEmpty(result.noPriceInRegion)}">
+		<svg th:replace="~{fragments/icons :: info}"></svg>
+		<div>
+			<p class="status-notice__title">가격 정보가 없는 상품이 장바구니에 있습니다.</p>
+			<p>아래 상품은 가격이 확인된 판매점이 없어서, 장바구니에 있는 동안은 완전 비교 결과가 나오지 않습니다.
+				가격 정보가 없다는 뜻이며 판매하지 않는다는 뜻은 아닙니다. 상품은 자동으로 빼지 않으니, 필요하면 장바구니에서 직접 빼고 다시 비교해 보세요.</p>
+			<div class="missing-notice__group" th:unless="${#lists.isEmpty(result.noPriceNationwide)}">
+				<p class="missing-notice__label">기준 조사일에 전국 어느 판매점에서도 가격이 확인되지 않은 상품</p>
+				<ul class="missing__list">
+					<li th:each="product : ${result.noPriceNationwide}">
+						<span th:text="${product.name}">때가 쏙 비트 분말세제(6kg)</span>
+						<span class="price-table__spec" th:if="${product.spec() != null}" th:text="${product.spec()}">6000 G</span>
+					</li>
+				</ul>
+			</div>
+			<div class="missing-notice__group" th:unless="${#lists.isEmpty(result.noPriceInRegion)}">
+				<p class="missing-notice__label"
+					th:text="|${result.areaName}에서는 가격이 확인되지 않았지만 다른 지역에는 가격이 있는 상품|">서울특별시에서는 가격이 확인되지 않았지만 다른 지역에는 가격이 있는 상품</p>
+				<ul class="missing__list">
+					<li th:each="product : ${result.noPriceInRegion}">
+						<span th:text="${product.name}">쇠고기 불고기(1+등급, 100g)</span>
+						<span class="price-table__spec" th:if="${product.spec() != null}" th:text="${product.spec()}">100 G</span>
+					</li>
+				</ul>
+				<p>위에서 다른 지역을 선택해 다시 비교하면 가격이 확인될 수 있습니다.</p>
+			</div>
+			<a class="text-link" th:href="@{/cart}">장바구니에서 상품 확인하기</a>
+		</div>
+	</div>
+
 	<!-- 처음 previewCount곳만 펼쳐 두고 나머지는 <details>로 접는다. 목록의 순서와 내용은 서비스가 정한 그대로이며 판매점을 빼지 않는다. -->
 	<section class="result-section result-section--complete" id="complete-stores"
 		th:unless="${#lists.isEmpty(result.completeStores)}" aria-labelledby="complete-title"

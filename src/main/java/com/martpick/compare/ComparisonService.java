@@ -1,10 +1,15 @@
 package com.martpick.compare;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,8 +72,39 @@ public class ComparisonService {
 
 		List<StorePriceRow> rows = priceRepository.findStorePrices(inspectDay, areaCode, goodIds);
 		ComparedStores compared = priceComparator.compare(cart, products, rows);
+
+		// 아래 안내 목록은 이미 계산한 비교 결과에 덧붙일 뿐, 완전·부분 비교와 총액 계산에는 쓰지 않는다.
+		Map<Long, ProductInfo> productById = products.stream()
+				.collect(Collectors.toMap(ProductInfo::goodId, Function.identity()));
+		Set<Long> pricedInRegion = rows.stream().map(StorePriceRow::goodId).collect(Collectors.toSet());
+		List<ProductInfo> missingInRegion = goodIds.stream()
+				.filter(goodId -> !pricedInRegion.contains(goodId))
+				.map(productById::get)
+				.toList();
+		Set<Long> pricedElsewhere = missingInRegion.isEmpty() ? Set.of()
+				: new HashSet<>(priceRepository.findComparablePricedGoodIds(inspectDay,
+						missingInRegion.stream().map(ProductInfo::goodId).toList()));
+		List<ProductInfo> noPriceNationwide = missingInRegion.stream()
+				.filter(product -> !pricedElsewhere.contains(product.goodId())).toList();
+		List<ProductInfo> noPriceInRegion = missingInRegion.stream()
+				.filter(product -> pricedElsewhere.contains(product.goodId())).toList();
+
 		return new ComparisonResult(inspectDay, region.getCode(), region.getName(),
-				compared.completeStores(), compared.partialStores());
+				compared.completeStores(), compared.partialStores(), noPriceNationwide, noPriceInRegion);
+	}
+
+	/**
+	 * 주어진 상품 중 기준 조사일에 비교에 쓸 가격이 전국 어디에도 없는 상품 ID를 입력 순서대로 돌려준다.
+	 * 비교 대상(본사 제외) 판매점의 가격만 세므로, 본사 판매점에만 있거나 다른 조사일에만 있는 가격은 없는 것으로 본다.
+	 * 상품 ID를 한 번에 조회하며, 입력이 비어 있으면 DB를 조회하지 않는다.
+	 */
+	public Set<Long> goodIdsWithoutPrice(Collection<Long> goodIds) {
+		if (goodIds.isEmpty()) {
+			return Set.of();
+		}
+		Set<Long> priced = new HashSet<>(priceRepository.findComparablePricedGoodIds(properties.inspectDay(), goodIds));
+		return goodIds.stream().filter(goodId -> !priced.contains(goodId))
+				.collect(Collectors.toCollection(LinkedHashSet::new));
 	}
 
 	/**

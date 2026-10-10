@@ -34,6 +34,7 @@ import com.martpick.catalog.RegionRepository;
 import com.martpick.catalog.Store;
 import com.martpick.catalog.StoreRepository;
 import com.martpick.compare.ComparisonResult;
+import com.martpick.compare.ProductInfo;
 import com.martpick.member.MemberRepository;
 import com.martpick.member.MemberService;
 
@@ -384,6 +385,27 @@ class MemberCartFlowTest {
 				.andExpect(status().isForbidden());
 
 		assertThat(rowsInDb(memberA)).isZero();
+	}
+
+	@Test
+	void 회원의_장바구니와_비교_화면에도_가격_부재_안내가_표시되고_장바구니는_그대로다() throws Exception {
+		long noPriceId = 9_000_803L;
+		productRepository.save(new Product(noPriceId, "마트픽회원흐름 가격없는상품", "1", "EA"));
+		productRepository.flush();
+		MockHttpSession member = login("flowCartA", PASSWORD_A, null);
+		add(member, CUP_ID);
+		add(member, noPriceId);
+
+		String cartHtml = mockMvc.perform(get("/cart").session(member)).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		assertThat(cartHtml).contains("가격 데이터가 없는 상품이 1종 있습니다.").doesNotContain("cart-guest-notice");
+		assertThat(cartHtml.split("기준 조사일 가격 데이터 없음", -1).length - 1).isEqualTo(1);
+
+		ComparisonResult result = compare(member);
+		assertThat(result.noPriceNationwide()).extracting(ProductInfo::goodId).containsExactly(noPriceId);
+		assertThat(result.noPriceInRegion()).isEmpty();
+		assertThat(result.completeStores()).isEmpty();
+		assertThat(rowsInDb(memberA)).as("자동 제외·삭제 없음").isEqualTo(2);
 	}
 
 	// ---- 도우미 ----

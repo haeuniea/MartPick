@@ -1,6 +1,7 @@
 package com.martpick.compare;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -50,6 +51,10 @@ class GuestCompareFlowTest {
 	private static final long OTHER_STORE_ID = 9_999_999_303L;
 	private static final long CUP_ID = 9_000_301L;
 	private static final long MILK_ID = 9_000_302L;
+	/** 어느 판매점에도 가격이 없는 상품 */
+	private static final long NO_PRICE_ID = 9_000_303L;
+	/** 다른 지역(OTHER_AREA_CODE) 판매점에만 가격이 있는 상품 */
+	private static final long ELSEWHERE_ID = 9_000_304L;
 	private static final long COMPLETE_STORE_ID = 9_999_999_301L;
 	private static final long PARTIAL_STORE_ID = 9_999_999_302L;
 
@@ -85,6 +90,9 @@ class GuestCompareFlowTest {
 		Store other = storeRepository.save(otherStore(OTHER_STORE_ID, "테스트군마트"));
 		priceRepository.save(new Price(other, cup, INSPECT_DAY, 1500));
 		priceRepository.save(new Price(other, milk, INSPECT_DAY, 3000));
+		Product elsewhere = productRepository.save(new Product(ELSEWHERE_ID, "마트픽테스트 타지역상품", "1", "EA"));
+		productRepository.save(new Product(NO_PRICE_ID, "마트픽테스트 가격없는상품", "1", "EA"));
+		priceRepository.save(new Price(other, elsewhere, INSPECT_DAY, 2000));
 		priceRepository.flush();
 	}
 
@@ -141,6 +149,37 @@ class GuestCompareFlowTest {
 				"<option value=\"029900000\">테스트시</option>");
 		assertThat(new TreeSet<>(Collections.list(session.getAttributeNames())))
 				.as("지역을 세션에 새로 저장하지 않는다").isEqualTo(attributesBefore);
+	}
+
+	@Test
+	void 전국_부재와_지역_부재_상품을_구분해_안내하고_장바구니_상품은_그대로_둔다() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+		addToCart(session, CUP_ID);
+		addToCart(session, ELSEWHERE_ID);
+		addToCart(session, NO_PRICE_ID);
+
+		MvcResult first = mockMvc.perform(get("/compare").session(session).param("areaCode", AREA_CODE))
+				.andExpect(status().isOk()).andReturn();
+		ComparisonResult result = (ComparisonResult) first.getModelAndView().getModel().get("result");
+
+		assertThat(result.completeStores()).isEmpty();
+		assertThat(result.partialStores()).extracting(PartialStore::entpId, PartialStore::knownSubtotal)
+				.containsExactlyInAnyOrder(tuple(COMPLETE_STORE_ID, 1280L), tuple(PARTIAL_STORE_ID, 1300L));
+		assertThat(result.noPriceNationwide()).extracting(ProductInfo::goodId).containsExactly(NO_PRICE_ID);
+		assertThat(result.noPriceInRegion()).extracting(ProductInfo::goodId).containsExactly(ELSEWHERE_ID);
+		assertThat(first.getResponse().getContentAsString()).contains("가격 정보가 없는 상품이 장바구니에 있습니다.",
+				"마트픽테스트 가격없는상품", "마트픽테스트 타지역상품", "테스트시에서는 가격이 확인되지 않았지만 다른 지역에는 가격이 있는 상품");
+
+		MvcResult cart = mockMvc.perform(get("/cart").session(session)).andExpect(status().isOk()).andReturn();
+		assertThat((List<?>) cart.getModelAndView().getModel().get("items")).as("자동 제외·삭제 없음").hasSize(3);
+		String cartHtml = cart.getResponse().getContentAsString();
+		assertThat(cartHtml.split("기준 조사일 가격 데이터 없음", -1).length - 1).as("전국 부재 상품에만 표시").isEqualTo(1);
+		assertThat(cartHtml).contains("가격 데이터가 없는 상품이 1종 있습니다.");
+
+		ComparisonResult other = (ComparisonResult) mockMvc.perform(get("/compare").session(session).param("areaCode", OTHER_AREA_CODE))
+				.andExpect(status().isOk()).andReturn().getModelAndView().getModel().get("result");
+		assertThat(other.noPriceNationwide()).extracting(ProductInfo::goodId).containsExactly(NO_PRICE_ID);
+		assertThat(other.noPriceInRegion()).isEmpty();
 	}
 
 	@Test

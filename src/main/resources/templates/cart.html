@@ -41,6 +41,16 @@
 					</div>
 				</div>
 
+				<!-- 기준 조사일에 비교 대상 판매점 어디에도 가격이 없는 상품 안내. 가격이 아니라 가격 데이터 유무만 알리며 상품은 그대로 둔다. -->
+				<div class="status-notice cart-noprice-notice" role="status" th:unless="${#sets.isEmpty(noPriceGoodIds)}">
+					<svg th:replace="~{fragments/icons :: info}"></svg>
+					<div>
+						<p class="status-notice__title" th:text="|가격 데이터가 없는 상품이 ${#sets.size(noPriceGoodIds)}종 있습니다.|">가격 데이터가 없는 상품이 1종 있습니다.</p>
+						<p>기준 조사일에 가격이 확인된 판매점이 없는 상품입니다. 이 상품이 장바구니에 있으면 완전 비교 결과가 나오지 않습니다(일부 상품의 가격만 확인된 판매점은 부분 비교로 표시됩니다).
+							상품은 자동으로 빼지 않으니, 필요하면 직접 삭제해 주세요.</p>
+					</div>
+				</div>
+
 				<div class="auth-notice cart-guest-notice" sec:authorize="!isAuthenticated()">
 					<p>로그인하면 지금 담은 상품은 회원 장바구니로 옮겨지지 않습니다. 로그인한 뒤 다시 담아 주세요.</p>
 					<p><a th:href="@{/login(continue='/cart')}">로그인</a> · <a th:href="@{/signup(continue='/cart')}">회원가입</a></p>
@@ -52,6 +62,9 @@
 							<p class="cart-row__name" th:text="${item.name}">오리온 초코파이(18개입)</p>
 							<p class="cart-row__spec" th:if="${item.spec != null}">
 								규격 <span th:text="${item.spec}">702 G</span>
+							</p>
+							<p class="cart-row__noprice" th:if="${noPriceGoodIds.contains(item.goodId)}">
+								<svg th:replace="~{fragments/icons :: alert}"></svg><span>기준 조사일 가격 데이터 없음</span>
 							</p>
 						</div>
 						<div class="cart-row__actions">

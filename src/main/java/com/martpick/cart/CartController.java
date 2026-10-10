@@ -1,6 +1,7 @@
 package com.martpick.cart;
 
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
@@ -24,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * 장바구니 화면. 비회원은 세션 장바구니를, 로그인한 회원은 DB 장바구니를 쓴다 ({@link CartService}).
  * 회원은 인증 정보({@code @AuthenticationPrincipal})로만 정하며 요청 파라미터에서 받지 않는다.
+ * 장바구니 상품 중 기준 조사일에 가격 데이터가 전혀 없는 상품은 화면에서 알려 주기만 하며, 상품을 빼거나 바꾸지 않는다.
  * 상태를 바꾸는 요청은 POST 처리 후 redirect한다 (PRG).
  */
 @Controller
@@ -40,6 +42,8 @@ public class CartController {
 		List<CartItemView> items = cartService.items(member);
 		model.addAttribute("items", items);
 		model.addAttribute("regions", items.isEmpty() ? List.of() : comparisonService.comparableRegions());
+		model.addAttribute("noPriceGoodIds", items.isEmpty() ? Set.of()
+				: comparisonService.goodIdsWithoutPrice(items.stream().map(CartItemView::goodId).toList()));
 		model.addAttribute("inspectDay", properties.inspectDay());
 		return "cart";
 	}

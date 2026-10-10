@@ -29,6 +29,18 @@ public interface PriceRepository extends JpaRepository<Price, Long> {
 	int deleteByInspectDay(@Param("inspectDay") LocalDate inspectDay);
 
 	/**
+	 * 주어진 상품 중 기준 조사일에 비교 대상(본사 제외) 판매점의 가격이 1곳 이상 있는 상품 ID를 한 번에 조회한다.
+	 * 지역은 따지지 않으며, 본사 판매점에만 있는 가격이나 다른 조사일의 가격은 비교에 쓸 수 없으므로 세지 않는다.
+	 */
+	@Query("""
+			select distinct p.product.goodId
+			from Price p join p.store s
+			where p.inspectDay = :inspectDay and s.excluded = false and p.product.goodId in :goodIds
+			""")
+	List<Long> findComparablePricedGoodIds(@Param("inspectDay") LocalDate inspectDay,
+			@Param("goodIds") Collection<Long> goodIds);
+
+	/**
 	 * 기준 조사일·선택 지역·비교 대상(본사 제외) 판매점의 장바구니 상품 가격을 한 번에 조회한다.
 	 */
 	@Query("""

@@ -9,7 +9,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -259,6 +262,93 @@ class CartControllerTest {
 		int start = html.indexOf("cart-guest-notice");
 		assertThat(start).as("비회원 병합 안내 영역").isNotNegative();
 		return html.substring(start, html.indexOf("</div>", start));
+	}
+
+	@Test
+	void 전국_가격_데이터가_없는_상품에만_표시와_요약_안내를_보여_준다() throws Exception {
+		given(cartService.items(null)).willReturn(List.of(
+				new CartItemView(993L, "오리온 초코파이(18개입)", "702 G", 3),
+				new CartItemView(1274L, "때가 쏙 비트 분말세제(6kg)", "6000 G", 1)));
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption("020100000", "서울특별시")));
+		given(comparisonService.goodIdsWithoutPrice(List.of(993L, 1274L))).willReturn(new LinkedHashSet<>(List.of(1274L)));
+
+		String html = mockMvc.perform(get("/cart")).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(cartRow(html, "오리온 초코파이(18개입)")).doesNotContain("기준 조사일 가격 데이터 없음");
+		assertThat(cartRow(html, "때가 쏙 비트 분말세제(6kg)")).contains("기준 조사일 가격 데이터 없음");
+		assertThat(html).contains("가격 데이터가 없는 상품이 1종 있습니다.");
+		assertThat(html).contains("완전 비교 결과가 나오지 않습니다");
+		assertThat(html).doesNotContain("원<");
+	}
+
+	@Test
+	void 가격_데이터가_없는_상품이_여러_개여도_모두_표시하고_종_수를_안내한다() throws Exception {
+		given(cartService.items(null)).willReturn(List.of(
+				new CartItemView(993L, "오리온 초코파이(18개입)", "702 G", 3),
+				new CartItemView(1274L, "때가 쏙 비트 분말세제(6kg)", "6000 G", 1),
+				new CartItemView(1320L, "크리넥스 순수소프트 3겹 화장지(30롤)", "30 EA", 2)));
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption("020100000", "서울특별시")));
+		given(comparisonService.goodIdsWithoutPrice(List.of(993L, 1274L, 1320L)))
+				.willReturn(new LinkedHashSet<>(List.of(1274L, 1320L)));
+
+		String html = mockMvc.perform(get("/cart")).andReturn().getResponse().getContentAsString();
+
+		assertThat(cartRow(html, "때가 쏙 비트 분말세제(6kg)")).contains("기준 조사일 가격 데이터 없음");
+		assertThat(cartRow(html, "크리넥스 순수소프트 3겹 화장지(30롤)")).contains("기준 조사일 가격 데이터 없음");
+		assertThat(cartRow(html, "오리온 초코파이(18개입)")).doesNotContain("기준 조사일 가격 데이터 없음");
+		assertThat(html).contains("가격 데이터가 없는 상품이 2종 있습니다.");
+	}
+
+	@Test
+	void 모든_상품에_가격이_있으면_불필요한_안내를_표시하지_않는다() throws Exception {
+		given(cartService.items(null)).willReturn(List.of(new CartItemView(993L, "오리온 초코파이(18개입)", "702 G", 3)));
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption("020100000", "서울특별시")));
+
+		mockMvc.perform(get("/cart")).andExpect(status().isOk())
+				.andExpect(content().string(not(containsString("기준 조사일 가격 데이터 없음"))))
+				.andExpect(content().string(not(containsString("가격 데이터가 없는 상품이"))));
+	}
+
+	@Test
+	void 장바구니_상품_ID는_한_번에_조회하고_빈_장바구니는_조회하지_않는다() throws Exception {
+		given(cartService.items(null)).willReturn(List.of(
+				new CartItemView(993L, "오리온 초코파이(18개입)", "702 G", 3),
+				new CartItemView(1000L, "팔도 왕뚜껑(110g)", "110 G", 1),
+				new CartItemView(224L, "서울우유 흰우유(1L)", "1000 ML", 2)));
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption("020100000", "서울특별시")));
+
+		mockMvc.perform(get("/cart")).andExpect(status().isOk());
+
+		then(comparisonService).should(times(1)).goodIdsWithoutPrice(List.of(993L, 1000L, 224L));
+
+		given(cartService.items(null)).willReturn(List.of());
+		clearInvocations(comparisonService);
+		mockMvc.perform(get("/cart")).andExpect(status().isOk());
+		then(comparisonService).should(never()).goodIdsWithoutPrice(any());
+	}
+
+	@Test
+	void 로그인한_회원의_장바구니에도_같은_안내를_보여_주고_상품은_그대로_둔다() throws Exception {
+		MemberUserDetails member = new MemberUserDetails(7L, "tester01", "hash");
+		given(cartService.items(member)).willReturn(List.of(new CartItemView(1274L, "때가 쏙 비트 분말세제(6kg)", "6000 G", 1)));
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption("020100000", "서울특별시")));
+		given(comparisonService.goodIdsWithoutPrice(List.of(1274L))).willReturn(new LinkedHashSet<>(List.of(1274L)));
+
+		String html = mockMvc.perform(get("/cart").with(user(member))).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(cartRow(html, "때가 쏙 비트 분말세제(6kg)")).contains("기준 조사일 가격 데이터 없음");
+		assertThat(html).contains("가격 데이터가 없는 상품이 1종 있습니다.").doesNotContain("cart-guest-notice");
+		then(cartService).should(never()).remove(any(), anyLong());
+		then(cartService).should(never()).changeQuantity(any(), anyLong(), anyInt());
+	}
+
+	private static String cartRow(String html, String productName) {
+		int name = html.indexOf(productName);
+		assertThat(name).as("장바구니 행 " + productName).isNotNegative();
+		int start = html.lastIndexOf("<li class=\"cart-row\"", name);
+		return html.substring(start, html.indexOf("</li>", name));
 	}
 
 	@Test

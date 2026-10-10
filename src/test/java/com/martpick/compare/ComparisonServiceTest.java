@@ -6,9 +6,11 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Arrays;
 import java.util.List;
 
+import org.assertj.core.groups.Tuple;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +57,12 @@ class ComparisonServiceTest {
 	private static final long RICE_SOUP = 1008L;
 	private static final long RICE = 292L;
 	private static final long NOT_COLLECTED = 553L;
+	/** 어느 판매점에도 가격이 없는 상품 */
+	private static final long NO_PRICE = 9_001L;
+	/** 비교 제외(본사) 판매점에만 가격이 있는 상품 */
+	private static final long HEADQUARTERS_ONLY = 9_002L;
+	/** 기준 조사일이 아닌 날에만 가격이 있는 상품 */
+	private static final long OTHER_DAY_ONLY = 9_003L;
 
 	@TestConfiguration
 	static class Config {
@@ -259,6 +267,179 @@ class ComparisonServiceTest {
 		assertThat(small).as("테스트 프로필에서 Hibernate 통계가 켜져 있어야 한다").isPositive();
 		assertThat(large).isEqualTo(small);
 		assertThat(large).isLessThanOrEqualTo(3);
+	}
+
+	// ---- 가격 데이터 부재 안내 (6-3 U5) ----
+
+	@Test
+	void 장바구니_상품에_모두_가격이_있으면_가격_부재_안내_목록은_비어_있다() {
+		ComparisonResult result = comparisonService.compare(SEOUL, cart(RAMEN, 1, SOUP, 1, RICE_SOUP, 1));
+
+		assertThat(result.noPriceNationwide()).isEmpty();
+		assertThat(result.noPriceInRegion()).isEmpty();
+	}
+
+	@Test
+	void 기준_조사일에_어느_판매점에도_가격이_없는_상품은_전국_부재로_안내한다() {
+		givenProductsWithoutComparablePrice();
+
+		ComparisonResult result = comparisonService.compare(SEOUL, cart(RAMEN, 1, NO_PRICE, 1));
+
+		assertThat(result.noPriceNationwide()).extracting(ProductInfo::goodId).containsExactly(NO_PRICE);
+		assertThat(result.noPriceNationwide().get(0).name()).isEqualTo("가격없는상품");
+		assertThat(result.noPriceInRegion()).isEmpty();
+	}
+
+	@Test
+	void 본사_판매점에만_또는_다른_조사일에만_가격이_있는_상품도_비교에_쓸_가격이_없으므로_전국_부재로_본다() {
+		givenProductsWithoutComparablePrice();
+
+		ComparisonResult result = comparisonService.compare(SEOUL,
+				cart(RAMEN, 1, HEADQUARTERS_ONLY, 1, OTHER_DAY_ONLY, 1));
+
+		assertThat(result.noPriceNationwide()).extracting(ProductInfo::goodId)
+				.containsExactly(HEADQUARTERS_ONLY, OTHER_DAY_ONLY);
+		assertThat(result.noPriceInRegion()).isEmpty();
+	}
+
+	@Test
+	void 선택_지역에는_가격이_없지만_다른_지역에_있는_상품은_지역_부재로_안내한다() {
+		ComparisonResult result = comparisonService.compare(INCHEON, cart(RAMEN, 1, SOUP, 1));
+
+		assertThat(result.noPriceInRegion()).extracting(ProductInfo::goodId).containsExactly(SOUP);
+		assertThat(result.noPriceNationwide()).isEmpty();
+		assertThat(result.status()).isEqualTo(ComparisonStatus.NO_COMPLETE_STORE);
+	}
+
+	@Test
+	void 전국_부재와_지역_부재를_구분하고_각각_장바구니에_담은_순서를_유지한다() {
+		givenProductsWithoutComparablePrice();
+
+		ComparisonResult result = comparisonService.compare(INCHEON,
+				cart(NO_PRICE, 1, SOUP, 1, RAMEN, 1, RICE_SOUP, 1, HEADQUARTERS_ONLY, 1));
+
+		assertThat(result.noPriceNationwide()).extracting(ProductInfo::goodId).containsExactly(NO_PRICE, HEADQUARTERS_ONLY);
+		assertThat(result.noPriceInRegion()).extracting(ProductInfo::goodId).containsExactly(SOUP, RICE_SOUP);
+	}
+
+	@Test
+	void 장바구니_순서를_바꾸면_안내_목록의_순서도_바뀐다() {
+		givenProductsWithoutComparablePrice();
+
+		ComparisonResult result = comparisonService.compare(SEOUL,
+				cart(OTHER_DAY_ONLY, 1, RAMEN, 1, HEADQUARTERS_ONLY, 1, NO_PRICE, 1));
+
+		assertThat(result.noPriceNationwide()).extracting(ProductInfo::goodId)
+				.containsExactly(OTHER_DAY_ONLY, HEADQUARTERS_ONLY, NO_PRICE);
+	}
+
+	@Test
+	void 모든_상품에_가격이_없으면_NO_PRICED_STORE이고_상품을_모두_안내한다() {
+		givenProductsWithoutComparablePrice();
+
+		ComparisonResult result = comparisonService.compare(SEOUL, cart(NO_PRICE, 1, HEADQUARTERS_ONLY, 2));
+
+		assertThat(result.status()).isEqualTo(ComparisonStatus.NO_PRICED_STORE);
+		assertThat(result.completeStores()).isEmpty();
+		assertThat(result.partialStores()).isEmpty();
+		assertThat(result.noPriceNationwide()).extracting(ProductInfo::goodId).containsExactly(NO_PRICE, HEADQUARTERS_ONLY);
+	}
+
+	@Test
+	void 가격_없는_상품이_있어도_자동_제외하지_않고_부분_비교의_누락_상품으로_남는다() {
+		givenProductsWithoutComparablePrice();
+
+		ComparisonResult result = comparisonService.compare(SEOUL, cart(RAMEN, 1, NO_PRICE, 1));
+
+		assertThat(result.completeStores()).isEmpty();
+		assertThat(result.status()).isEqualTo(ComparisonStatus.NO_COMPLETE_STORE);
+		assertThat(result.partialStores()).extracting(PartialStore::entpId, PartialStore::knownSubtotal)
+				.containsExactly(tuple(1L, 1_000L), tuple(2L, 1_200L), tuple(3L, 900L));
+		assertThat(result.partialStores()).allSatisfy(store -> assertThat(store.missingProducts())
+				.extracting(ProductInfo::goodId).containsExactly(NO_PRICE));
+	}
+
+	@Test
+	void 가격_부재_안내는_기존_완전_비교_부분_비교_계산을_바꾸지_않는다() {
+		givenProductsWithoutComparablePrice();
+		ComparisonResult before = comparisonService.compare(SEOUL, cart(RAMEN, 1, SOUP, 1));
+
+		ComparisonResult after = comparisonService.compare(SEOUL, cart(RAMEN, 1, SOUP, 1, NO_PRICE, 1));
+
+		assertThat(before.completeStores()).extracting(CompleteStore::entpId).containsExactly(3L, 1L, 2L);
+		assertThat(after.completeStores()).isEmpty();
+		List<Tuple> expectedSubtotals = before.completeStores().stream()
+				.sorted(Comparator.comparingLong(CompleteStore::entpId))
+				.map(store -> tuple(store.entpId(), store.totalPrice()))
+				.toList();
+		assertThat(after.partialStores()).extracting(PartialStore::entpId, PartialStore::knownSubtotal)
+				.containsExactlyElementsOf(expectedSubtotals);
+		assertThat(before.noPriceNationwide()).isEmpty();
+	}
+
+	@Test
+	void 가격_부재가_있어도_SQL은_한_번만_늘고_부재_상품_수와_관계없다() {
+		givenProductsWithoutComparablePrice();
+
+		long allPriced = statementCount(() -> comparisonService.compare(SEOUL, cart(RAMEN, 1, SOUP, 1)));
+		long oneMissing = statementCount(() -> comparisonService.compare(SEOUL, cart(RAMEN, 1, NO_PRICE, 1)));
+		long manyMissing = statementCount(() -> comparisonService.compare(SEOUL,
+				cart(RAMEN, 1, NO_PRICE, 1, HEADQUARTERS_ONLY, 1, OTHER_DAY_ONLY, 1)));
+
+		assertThat(allPriced).as("테스트 프로필에서 Hibernate 통계가 켜져 있어야 한다").isPositive();
+		assertThat(oneMissing).isEqualTo(allPriced + 1);
+		assertThat(manyMissing).isEqualTo(oneMissing);
+	}
+
+	// ---- 장바구니의 전국 가격 부재 조회 (6-3 U6) ----
+
+	@Test
+	void 가격이_있는_상품만_담았으면_가격_없는_상품_집합은_비어_있다() {
+		assertThat(comparisonService.goodIdsWithoutPrice(List.of(RAMEN, SOUP, RICE_SOUP, RICE))).isEmpty();
+	}
+
+	@Test
+	void 비교에_쓸_가격이_없는_상품만_담긴_순서대로_돌려준다() {
+		givenProductsWithoutComparablePrice();
+
+		assertThat(comparisonService.goodIdsWithoutPrice(
+				List.of(NO_PRICE, RAMEN, HEADQUARTERS_ONLY, SOUP, OTHER_DAY_ONLY)))
+				.containsExactly(NO_PRICE, HEADQUARTERS_ONLY, OTHER_DAY_ONLY);
+	}
+
+	@Test
+	void 어느_지역에도_가격이_있으면_선택_지역과_관계없이_가격이_있는_상품이다() {
+		assertThat(comparisonService.goodIdsWithoutPrice(List.of(SOUP))).isEmpty();
+	}
+
+	@Test
+	void 빈_입력은_DB를_조회하지_않고_빈_집합이다() {
+		long count = statementCount(() -> assertThat(comparisonService.goodIdsWithoutPrice(List.of())).isEmpty());
+
+		assertThat(count).isZero();
+	}
+
+	@Test
+	void 상품이_늘어도_가격_부재_조회는_SQL_한_번이다() {
+		givenProductsWithoutComparablePrice();
+
+		long one = statementCount(() -> comparisonService.goodIdsWithoutPrice(List.of(NO_PRICE)));
+		long many = statementCount(() -> comparisonService.goodIdsWithoutPrice(
+				List.of(NO_PRICE, RAMEN, HEADQUARTERS_ONLY, SOUP, OTHER_DAY_ONLY, RICE_SOUP, RICE)));
+
+		assertThat(one).isEqualTo(1L);
+		assertThat(many).isEqualTo(1L);
+	}
+
+	private void givenProductsWithoutComparablePrice() {
+		em.persist(new Product(NO_PRICE, "가격없는상품", "100", "G"));
+		em.persist(new Product(HEADQUARTERS_ONLY, "본사가격만있는상품", "100", "G"));
+		em.persist(new Product(OTHER_DAY_ONLY, "다른조사일만있는상품", "100", "G"));
+		em.flush();
+		prices(em.find(Store.class, 115L), DAY, HEADQUARTERS_ONLY, 777);
+		prices(em.find(Store.class, 1L), OTHER_DAY, OTHER_DAY_ONLY, 888);
+		em.flush();
+		em.clear();
 	}
 
 	private long statementCount(Runnable call) {

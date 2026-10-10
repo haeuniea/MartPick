@@ -1,6 +1,9 @@
 package com.martpick.compare;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
@@ -44,6 +47,13 @@ class CompareControllerTest {
 	private static final ProductInfo RAMEN = new ProductInfo(1000L, "팔도 왕뚜껑(110g)", "110", "G");
 	private static final ProductInfo RICE = new ProductInfo(292L, "햇반(210g)", "210", "G");
 	private static final ProductInfo MILK = new ProductInfo(224L, "서울우유 흰우유(1L)", "1000", "ML");
+	private static final ProductInfo NO_PRICE_A = new ProductInfo(1274L, "때가 쏙 비트 분말세제(6kg)", "6000", "G");
+	private static final ProductInfo NO_PRICE_B = new ProductInfo(1320L, "크리넥스 순수소프트 3겹 화장지(30롤)", "30", "EA");
+	private static final ProductInfo ELSEWHERE_A = new ProductInfo(247L, "쇠고기 불고기(1+등급, 100g)", "100", "G");
+	private static final ProductInfo ELSEWHERE_B = new ProductInfo(941L, "오징어(냉동, 200~300g)", "250", "G");
+	private static final String MISSING_TITLE = "가격 정보가 없는 상품이 장바구니에 있습니다.";
+	private static final String NATIONWIDE_LABEL = "기준 조사일에 전국 어느 판매점에서도 가격이 확인되지 않은 상품";
+	private static final String REGION_LABEL = "서울특별시에서는 가격이 확인되지 않았지만 다른 지역에는 가격이 있는 상품";
 	private static final List<CartLine> CART = List.of(new CartLine(1000L, 2), new CartLine(292L, 1), new CartLine(224L, 1));
 
 	@Autowired
@@ -334,6 +344,114 @@ class CompareControllerTest {
 		assertThat(html).doesNotContain("<ol").doesNotContainPattern("\\d+위");
 		assertThat(storeNames(section(html, "complete-stores"))).containsExactlyElementsOf(names(completes));
 		assertThat(storeNames(section(html, "partial-stores"))).containsExactlyElementsOf(partialNames(partials));
+	}
+
+	@Test
+	void 가격_부재_상품이_없으면_안내를_표시하지_않는다() throws Exception {
+		givenResult(List.of(complete(100L, "가마트", "주소", 1000, 1000, 1000)), List.of());
+
+		assertThat(render()).doesNotContain(MISSING_TITLE).doesNotContain(NATIONWIDE_LABEL).doesNotContain("다른 지역에는 가격이 있는 상품");
+	}
+
+	@Test
+	void 전국_가격_부재_상품은_이름과_함께_전국_기준으로_안내한다() throws Exception {
+		givenMissing(List.of(), List.of(partial(200L, "나마트", 100)), List.of(NO_PRICE_A), List.of());
+
+		String notice = missingNotice(render());
+
+		assertThat(notice).contains(MISSING_TITLE, NATIONWIDE_LABEL, "때가 쏙 비트 분말세제(6kg)", "6000 G");
+		assertThat(notice).doesNotContain("다른 지역에는 가격이 있는 상품");
+		assertThat(notice).contains("판매하지 않는다는 뜻은 아닙니다").contains("href=\"/cart\"");
+	}
+
+	@Test
+	void 지역_가격_부재_상품은_선택_지역_이름과_함께_지역_기준으로_안내한다() throws Exception {
+		givenMissing(List.of(), List.of(partial(200L, "나마트", 100)), List.of(), List.of(ELSEWHERE_A));
+
+		String notice = missingNotice(render());
+
+		assertThat(notice).contains(MISSING_TITLE, REGION_LABEL, "쇠고기 불고기(1+등급, 100g)");
+		assertThat(notice).doesNotContain(NATIONWIDE_LABEL);
+	}
+
+	@Test
+	void 전국_부재와_지역_부재가_여러_개일_때_각각_자기_그룹에_모두_표시한다() throws Exception {
+		givenMissing(List.of(), List.of(partial(200L, "나마트", 100)),
+				List.of(NO_PRICE_A, NO_PRICE_B), List.of(ELSEWHERE_A, ELSEWHERE_B));
+
+		String notice = missingNotice(render());
+		int national = notice.indexOf(NATIONWIDE_LABEL);
+		int region = notice.indexOf(REGION_LABEL);
+
+		assertThat(national).isNotNegative();
+		assertThat(region).isGreaterThan(national);
+		String nationalGroup = notice.substring(national, region);
+		String regionGroup = notice.substring(region);
+		assertThat(nationalGroup).contains("때가 쏙 비트 분말세제(6kg)", "크리넥스 순수소프트 3겹 화장지(30롤)")
+				.doesNotContain("쇠고기 불고기").doesNotContain("오징어");
+		assertThat(regionGroup).contains("쇠고기 불고기(1+등급, 100g)", "오징어(냉동, 200~300g)")
+				.doesNotContain("때가 쏙").doesNotContain("크리넥스");
+		assertThat(nationalGroup.indexOf("때가 쏙")).isLessThan(nationalGroup.indexOf("크리넥스"));
+	}
+
+	@Test
+	void 완전_비교가_0곳이어도_가격_부재_안내와_기존_안내를_함께_보여_준다() throws Exception {
+		givenMissing(List.of(), List.of(partial(200L, "나마트", 100)), List.of(NO_PRICE_A), List.of());
+		String html = render();
+
+		assertThat(html).contains("선택한 지역에는 장바구니의 모든 상품의 가격이 확인된 판매점이 없습니다.").contains(MISSING_TITLE);
+		assertThat(html).contains("나마트").doesNotContain("id=\"complete-stores\"");
+
+		givenMissing(List.of(), List.of(), List.of(NO_PRICE_A), List.of(ELSEWHERE_A));
+		String noPriced = render();
+
+		assertThat(noPriced).contains("선택한 지역에는 장바구니 상품의 가격이 확인된 판매점이 없습니다.").contains(MISSING_TITLE);
+		assertThat(missingNotice(noPriced)).contains("때가 쏙 비트 분말세제(6kg)", "쇠고기 불고기(1+등급, 100g)");
+	}
+
+	@Test
+	void 가격_부재_안내가_있어도_판매점_결과와_정렬과_총액은_그대로_표시하고_장바구니를_바꾸지_않는다() throws Exception {
+		List<CompleteStore> completes = List.of(
+				complete(300L, "다마트", "주소", 1000, 1000, 1000),
+				complete(100L, "가마트", "주소", 1000, 1000, 1100));
+		givenMissing(completes, List.of(partial(900L, "하마트", 9000), partial(200L, "나마트", 100)),
+				List.of(NO_PRICE_A), List.of(ELSEWHERE_A));
+
+		String html = render();
+
+		assertThat(html.indexOf("다마트")).isLessThan(html.indexOf("가마트"));
+		assertThat(html.indexOf("하마트")).isLessThan(html.indexOf("나마트"));
+		assertThat(html).contains("완전 비교 2곳", "부분 비교 2곳", "4,000원", "4,100원").doesNotContain("<ol");
+		then(cartService).should(never()).remove(any(), anyLong());
+		then(cartService).should(never()).changeQuantity(any(), anyLong(), anyInt());
+	}
+
+	@Test
+	void 가격_부재_상품_이름의_HTML은_이스케이프한다() throws Exception {
+		givenMissing(List.of(), List.of(), List.of(new ProductInfo(1L, "<b>위험</b> 상품", "1", "EA")), List.of());
+
+		String notice = missingNotice(render());
+
+		assertThat(notice).contains("&lt;b&gt;위험&lt;/b&gt; 상품").doesNotContain("<b>위험");
+	}
+
+	private void givenMissing(List<CompleteStore> completeStores, List<PartialStore> partialStores,
+			List<ProductInfo> noPriceNationwide, List<ProductInfo> noPriceInRegion) {
+		given(comparisonService.compare(SEOUL, CART)).willReturn(new ComparisonResult(INSPECT_DAY, SEOUL, "서울특별시",
+				completeStores, partialStores, noPriceNationwide, noPriceInRegion));
+	}
+
+	private static String missingNotice(String html) {
+		int start = html.indexOf("missing-notice");
+		assertThat(start).as("가격 부재 안내 영역").isNotNegative();
+		int end = html.length();
+		for (String stop : new String[] {"<section class=\"result-section", "</main>"}) {
+			int index = html.indexOf(stop, start);
+			if (index > 0) {
+				end = Math.min(end, index);
+			}
+		}
+		return html.substring(start, end);
 	}
 
 	private void assertRedirectWithError(Reason reason, String message) throws Exception {
