@@ -15,6 +15,8 @@
 			aria-labelledby="signup-title">
 			<h2 class="compare-panel__title" id="signup-title"><span>가입 정보 입력</span></h2>
 
+			<input type="hidden" name="continue" th:if="${continueUrl != null}" th:value="${continueUrl}">
+
 			<div class="alerts" th:if="${#fields.hasErrors('*')}">
 				<ul class="alert alert--error auth-errors" role="alert">
 					<li th:each="message : ${#fields.allErrors()}" th:text="${message}">오류</li>
@@ -35,10 +37,15 @@
 			<input class="auth-input" type="password" name="passwordConfirm" id="passwordConfirm"
 				autocomplete="new-password" required>
 
+			<p class="compare-panel__hint auth-notice">
+				비회원으로 담은 상품은 가입 후 로그인해도 장바구니에 자동으로 추가되지 않습니다.
+			</p>
+
 			<button class="button button--primary button--large button--block" type="submit">
 				<span>가입하기</span>
 			</button>
-			<p class="compare-panel__hint">이미 회원이신가요? <a th:href="@{/login}">로그인</a></p>
+			<p class="compare-panel__hint">이미 회원이신가요?
+				<a th:href="${continueUrl != null} ? @{/login(continue=${continueUrl})} : @{/login}">로그인</a></p>
 		</form>
 	</div>
 </main>

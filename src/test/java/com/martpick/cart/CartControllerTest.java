@@ -222,6 +222,46 @@ class CartControllerTest {
 	}
 
 	@Test
+	void 비회원의_장바구니에_상품이_있으면_자동_병합되지_않는다는_안내와_로그인_가입_링크를_보여_준다() throws Exception {
+		given(cartService.items(null)).willReturn(List.of(new CartItemView(993L, "오리온 초코파이(18개입)", "702 G", 3)));
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption("020100000", "서울특별시")));
+
+		String html = mockMvc.perform(get("/cart")).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+
+		String notice = guestNotice(html);
+		assertThat(notice).contains("로그인하면 지금 담은 상품은 회원 장바구니로 옮겨지지 않습니다. 로그인한 뒤 다시 담아 주세요.");
+		assertThat(notice).contains("href=\"/login?continue=/cart\"", "href=\"/signup?continue=/cart\"");
+	}
+
+	@Test
+	void 비회원이라도_장바구니가_비어_있으면_병합_안내를_보여_주지_않는다() throws Exception {
+		given(cartService.items(null)).willReturn(List.of());
+
+		mockMvc.perform(get("/cart")).andExpect(status().isOk())
+				.andExpect(content().string(not(containsString("cart-guest-notice"))))
+				.andExpect(content().string(not(containsString("회원 장바구니로 옮겨지지 않습니다"))));
+	}
+
+	@Test
+	void 로그인한_회원에게는_비회원_병합_안내를_보여_주지_않는다() throws Exception {
+		MemberUserDetails member = new MemberUserDetails(7L, "tester01", "hash");
+		given(cartService.items(member)).willReturn(List.of(new CartItemView(993L, "오리온 초코파이(18개입)", "702 G", 3)));
+		given(comparisonService.comparableRegions()).willReturn(List.of(new RegionOption("020100000", "서울특별시")));
+
+		mockMvc.perform(get("/cart").with(user(member))).andExpect(status().isOk())
+				.andExpect(content().string(containsString("오리온 초코파이(18개입)")))
+				.andExpect(content().string(not(containsString("cart-guest-notice"))))
+				.andExpect(content().string(not(containsString("회원 장바구니로 옮겨지지 않습니다"))));
+	}
+
+	private static String guestNotice(String html) {
+		int start = html.indexOf("cart-guest-notice");
+		assertThat(start).as("비회원 병합 안내 영역").isNotNegative();
+		return html.substring(start, html.indexOf("</div>", start));
+	}
+
+	@Test
 	void 로그인한_회원의_담기에는_인증된_회원_주체가_전달된다() throws Exception {
 		MemberUserDetails member = new MemberUserDetails(7L, "tester01", "hash");
 		given(cartService.add(member, 1000L)).willReturn("팔도 왕뚜껑(110g)");

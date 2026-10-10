@@ -1,6 +1,7 @@
 package com.martpick.member;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.then;
@@ -10,12 +11,18 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -177,6 +184,98 @@ class MemberControllerTest {
 
 		assertThat(valid).contains("value=\"/products?page=2\"");
 		assertThat(invalid).doesNotContain("evil.com").doesNotContain("name=\"continue\"");
+	}
+
+	@Test
+	void 가입_화면은_비회원_장바구니가_자동으로_추가되지_않는다는_안내를_보여_준다() throws Exception {
+		mockMvc.perform(get("/signup")).andExpect(status().isOk())
+				.andExpect(content().string(containsString("비회원으로 담은 상품은 가입 후 로그인해도 장바구니에 자동으로 추가되지 않습니다.")));
+	}
+
+	@Test
+	void 가입_화면은_허용된_continue만_숨은_입력과_로그인_링크로_유지한다() throws Exception {
+		String html = mockMvc.perform(get("/signup").param("continue", "/cart"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("name=\"continue\" value=\"/cart\"");
+		assertThat(html).contains("<a href=\"/login?continue=/cart\">로그인</a>");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"https://evil.com", "//evil.com", "/admin", "/login", "javascript:alert(1)", "%2Fcart",
+			"/cart\r\nSet-Cookie: x=1"})
+	void 가입_화면은_허용되지_않은_continue를_버리고_일반_로그인_링크를_쓴다(String tampered) throws Exception {
+		String html = mockMvc.perform(get("/signup").param("continue", tampered))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(html).doesNotContain("name=\"continue\"").doesNotContain("evil.com");
+		assertThat(html).contains("<a href=\"/login\">로그인</a>");
+	}
+
+	@Test
+	void 가입에_성공하면_허용된_continue를_붙여_로그인_화면으로_이동한다() throws Exception {
+		String redirect = mockMvc.perform(post("/signup").with(csrf())
+						.param("username", "tester01").param("password", "password1").param("passwordConfirm", "password1")
+						.param("continue", "/cart"))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(flash().attribute("message", "회원가입이 완료되었습니다. 로그인해 주세요."))
+				.andReturn().getResponse().getRedirectedUrl();
+
+		assertThat(redirect).startsWith("/login?continue=");
+		assertThat(URLDecoder.decode(redirect.substring("/login?continue=".length()), StandardCharsets.UTF_8)).isEqualTo("/cart");
+		then(memberService).should().signup("tester01", "password1");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"https://evil.com", "//evil.com", "/admin", "javascript:alert(1)", "/cart\r\nX: y"})
+	void 가입에_성공해도_허용되지_않은_continue는_붙이지_않는다(String tampered) throws Exception {
+		mockMvc.perform(post("/signup").with(csrf())
+						.param("username", "tester01").param("password", "password1").param("passwordConfirm", "password1")
+						.param("continue", tampered))
+				.andExpect(redirectedUrl("/login"));
+	}
+
+	@Test
+	void 가입에_성공해도_continue가_없으면_이전처럼_로그인_화면으로_이동한다() throws Exception {
+		mockMvc.perform(post("/signup").with(csrf())
+						.param("username", "tester01").param("password", "password1").param("passwordConfirm", "password1"))
+				.andExpect(redirectedUrl("/login"));
+	}
+
+	@Test
+	void 입력이_잘못되거나_중복_아이디여도_허용된_continue는_가입_화면에_유지한다() throws Exception {
+		String invalid = mockMvc.perform(post("/signup").with(csrf())
+						.param("username", "ab").param("password", "password1").param("passwordConfirm", "password1")
+						.param("continue", "/cart"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(invalid).contains("name=\"continue\" value=\"/cart\"");
+
+		willThrow(new DuplicateUsernameException("tester01")).given(memberService).signup("tester01", "password1");
+		String duplicate = mockMvc.perform(post("/signup").with(csrf())
+						.param("username", "tester01").param("password", "password1").param("passwordConfirm", "password1")
+						.param("continue", "/compare?areaCode=020100000"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(duplicate).contains("name=\"continue\" value=\"/compare?areaCode=020100000\"");
+	}
+
+	@Test
+	void 로그인_화면의_회원가입_링크는_허용된_continue를_유지한다() throws Exception {
+		String html = mockMvc.perform(get("/login").param("continue", "/cart"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(html).contains("<a href=\"/signup?continue=/cart\">회원가입</a>");
+		assertThat(mockMvc.perform(get("/login")).andReturn().getResponse().getContentAsString())
+				.contains("<a href=\"/signup\">회원가입</a>");
+	}
+
+	@Test
+	void 로그인한_사용자의_가입_요청은_continue가_있어도_가입하지_않고_상품_탐색으로_이동한다() throws Exception {
+		mockMvc.perform(post("/signup").with(user(new MemberUserDetails(7L, "tester01", "hash"))).with(csrf())
+						.param("username", "other0001").param("password", "password1").param("passwordConfirm", "password1")
+						.param("continue", "/cart"))
+				.andExpect(redirectedUrl("/products"));
+
+		then(memberService).should(never()).signup(anyString(), anyString());
 	}
 
 	@Test

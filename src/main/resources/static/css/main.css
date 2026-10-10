@@ -1433,3 +1433,20 @@ summary:focus-visible {
 		justify-content: flex-end;
 	}
 }
+
+/* 장바구니: 비회원 안내 */
+.cart-guest-notice {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	margin-top: var(--space-4);
+}
+
+.cart-guest-notice p {
+	margin: 0;
+	font-size: 0.92rem;
+}
+
+.cart-guest-notice a {
+	font-weight: 700;
+}

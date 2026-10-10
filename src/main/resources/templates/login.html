@@ -33,7 +33,8 @@
 			<button class="button button--primary button--large button--block" type="submit">
 				<span>로그인</span>
 			</button>
-			<p class="compare-panel__hint">아직 회원이 아니신가요? <a th:href="@{/signup}">회원가입</a></p>
+			<p class="compare-panel__hint">아직 회원이 아니신가요?
+				<a th:href="${continueUrl != null} ? @{/signup(continue=${continueUrl})} : @{/signup}">회원가입</a></p>
 		</form>
 	</div>
 </main>

@@ -9,7 +9,7 @@
 <body>
 
 <!-- active: 현재 메뉴 ('products', 'cart', 'login', 'signup'). 해당 메뉴를 강조하고 aria-current를 붙인다.
-	로그인 링크는 요청 속성 loginContinue(복귀를 허용하는 화면에서만 설정, LoginContinueConfig)를 continue로 넘긴다. -->
+	로그인·회원가입 링크는 요청 속성 loginContinue(복귀를 허용하는 화면에서만 설정, LoginContinueConfig)를 continue로 넘긴다. -->
 <header class="site-header" th:fragment="header(active)">
 	<div class="container site-header__inner">
 		<a class="brand" th:href="@{/products}" aria-label="마트픽 홈">
@@ -38,7 +38,8 @@
 			<a class="site-nav__link" th:classappend="${active == 'login'} ? 'is-active'"
 				th:href="${loginContinue != null and active != 'login' and active != 'signup'} ? @{/login(continue=${loginContinue})} : @{/login}"
 				th:attr="aria-current=${active == 'login'} ? 'page' : null"><span>로그인</span></a>
-			<a class="site-nav__link" th:classappend="${active == 'signup'} ? 'is-active'" th:href="@{/signup}"
+			<a class="site-nav__link" th:classappend="${active == 'signup'} ? 'is-active'"
+				th:href="${loginContinue != null and active != 'login' and active != 'signup'} ? @{/signup(continue=${loginContinue})} : @{/signup}"
 				th:attr="aria-current=${active == 'signup'} ? 'page' : null"><span>회원가입</span></a>
 		</div>
 	</div>

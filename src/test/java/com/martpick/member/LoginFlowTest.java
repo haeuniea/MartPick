@@ -245,7 +245,8 @@ class LoginFlowTest {
 				.andReturn().getResponse().getContentAsString();
 
 		assertThat(loginLinkContinue(html)).isEqualTo("/products");
-		assertThat(html).contains("href=\"/signup\"").doesNotContain("로그아웃");
+		assertThat(html).contains("href=\"/signup?continue=/products\"").doesNotContain("href=\"/signup\"")
+				.doesNotContain("로그아웃");
 	}
 
 	@Test
@@ -256,6 +257,7 @@ class LoginFlowTest {
 		String carried = loginLinkContinue(html);
 		assertThat(carried).isEqualTo("/products?keyword=%ED%96%87%EB%B0%98&page=2");
 		assertThat(ContinueUrl.resolve(carried)).isEqualTo(carried);
+		assertThat(signupLinkContinue(html)).as("머리글의 가입 링크도 같은 복귀 주소를 넘긴다").isEqualTo(carried);
 	}
 
 	@Test
@@ -264,6 +266,8 @@ class LoginFlowTest {
 				.contains("href=\"/login\"").doesNotContain("/login?continue=");
 		assertThat(mockMvc.perform(get("/signup")).andReturn().getResponse().getContentAsString())
 				.contains("href=\"/login\"").doesNotContain("/login?continue=");
+		assertThat(mockMvc.perform(get("/login")).andReturn().getResponse().getContentAsString())
+				.contains("href=\"/signup\"").doesNotContain("/signup?continue=");
 	}
 
 	@Test
@@ -324,6 +328,12 @@ class LoginFlowTest {
 		Matcher matcher = Pattern.compile("name=\"continue\" value=\"([^\"]*)\"").matcher(html);
 		assertThat(matcher.find()).as("숨은 continue 입력").isTrue();
 		return matcher.group(1).replace("&amp;", "&");
+	}
+
+	private static String signupLinkContinue(String html) {
+		Matcher matcher = Pattern.compile("href=\"/signup\\?continue=([^\"]*)\"").matcher(html);
+		assertThat(matcher.find()).as("continue가 붙은 가입 링크").isTrue();
+		return URLDecoder.decode(matcher.group(1).replace("&amp;", "&"), StandardCharsets.UTF_8);
 	}
 
 	private static String loginLinkContinue(String html) {

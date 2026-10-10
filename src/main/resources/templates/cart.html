@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <head th:replace="~{fragments/layout :: head('장바구니')}"></head>
 <body>
 <header th:replace="~{fragments/layout :: header('cart')}"></header>
@@ -39,6 +39,11 @@
 						</p>
 						<p class="cart-summary__note">가격은 판매점마다 달라 비교 전에는 표시하지 않습니다.</p>
 					</div>
+				</div>
+
+				<div class="auth-notice cart-guest-notice" sec:authorize="!isAuthenticated()">
+					<p>로그인하면 지금 담은 상품은 회원 장바구니로 옮겨지지 않습니다. 로그인한 뒤 다시 담아 주세요.</p>
+					<p><a th:href="@{/login(continue='/cart')}">로그인</a> · <a th:href="@{/signup(continue='/cart')}">회원가입</a></p>
 				</div>
 
 				<ul class="cart-list">
