@@ -90,6 +90,44 @@ class MemberControllerTest {
 	}
 
 	@Test
+	void 검증_오류가_여러_개여도_아이디_비밀번호_비밀번호_확인_순서로_항목마다_표시한다() throws Exception {
+		String username = "아이디는 영문·숫자 4~20자로 입력해 주세요.";
+		String length = "비밀번호는 8자 이상이어야 합니다.";
+		String tooLong = "비밀번호가 너무 깁니다. 입력 내용을 줄여 주세요.";
+		String confirm = "비밀번호 확인이 일치하지 않습니다.";
+
+		for (int i = 0; i < 3; i++) {
+			assertOrdered(signupHtml("ab", "short", "different1"), username, length, confirm);
+			assertOrdered(signupHtml("ab", "valid-password-1", "different-password"), username, confirm);
+			assertOrdered(signupHtml("tester01", "short", "different1"), length, confirm);
+			assertOrdered(signupHtml("ab", "p".repeat(73), "q".repeat(73)), username, tooLong);
+			assertOrdered(signupHtml("tester01", "p".repeat(73), "q".repeat(73)), tooLong, confirm);
+			assertOrdered(signupHtml("ab", "short", "short"), username, length);
+		}
+	}
+
+	@Test
+	void 검증_오류는_가로_나열이_아니라_세로_목록으로_표시한다() throws Exception {
+		String html = signupHtml("ab", "short", "different1");
+
+		assertThat(html).containsPattern("<ul[^>]*class=\"[^\"]*auth-errors[^\"]*\"");
+		assertThat(html.split("<li>", -1).length - 1).as("오류 항목 수").isEqualTo(3);
+	}
+
+	private String signupHtml(String username, String password, String confirm) throws Exception {
+		return mockMvc.perform(signup(username, password, confirm)).andReturn().getResponse().getContentAsString();
+	}
+
+	private static void assertOrdered(String html, String... messages) {
+		int previous = -1;
+		for (String message : messages) {
+			int index = html.indexOf(message);
+			assertThat(index).as(message).isGreaterThan(previous);
+			previous = index;
+		}
+	}
+
+	@Test
 	void 가입에_성공하면_로그인_화면으로_이동하고_안내한다() throws Exception {
 		mockMvc.perform(signup("tester01", "password1", "password1"))
 				.andExpect(status().is3xxRedirection())

@@ -117,6 +117,69 @@ class CartControllerTest {
 	}
 
 	@Test
+	void 검색창_길이_제한과_같은_50자_검색어는_담기_후에도_유지한다() throws Exception {
+		given(cartService.add(null, 1000L)).willReturn("팔도 왕뚜껑(110g)");
+		String keyword = "a".repeat(50);
+
+		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("keyword", keyword))
+				.andExpect(redirectedUrl("/products?keyword=" + keyword + "#product-1000"));
+	}
+
+	@Test
+	void 이동_주소에_담기에는_너무_긴_검색어는_이동_주소에서_빼고_상품은_정상적으로_담는다() throws Exception {
+		given(cartService.add(null, 1000L)).willReturn("팔도 왕뚜껑(110g)");
+
+		for (String keyword : new String[] {"a".repeat(51), "a".repeat(8_300), "가".repeat(3_000), "a".repeat(1_500_000)}) {
+			mockMvc.perform(post("/cart/items").with(csrf())
+							.param("goodId", "1000").param("keyword", keyword).param("page", "3"))
+					.andExpect(status().is3xxRedirection())
+					.andExpect(redirectedUrl("/products?page=3#product-1000"))
+					.andExpect(flash().attribute("message", "팔도 왕뚜껑(110g)을(를) 장바구니에 담았습니다."));
+		}
+		then(cartService).should(times(4)).add(null, 1000L);
+	}
+
+	@Test
+	void 앞뒤_공백을_뺀_뒤의_길이로_판단한다() throws Exception {
+		given(cartService.add(null, 1000L)).willReturn("팔도 왕뚜껑(110g)");
+		String keyword = "a".repeat(50);
+
+		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("keyword", "  " + keyword + "  "))
+				.andExpect(redirectedUrl("/products?keyword=" + keyword + "#product-1000"));
+	}
+
+	@Test
+	void 제어_문자가_있는_검색어는_담기_후_이동_주소에서_빼고_상품은_정상적으로_담는다() throws Exception {
+		given(cartService.add(null, 1000L)).willReturn("팔도 왕뚜껑(110g)");
+
+		for (String keyword : new String[] {"\u0000", "햇반\u0000밥", "햇반\n밥", "\u0085", "\u007f"}) {
+			mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("keyword", keyword))
+					.andExpect(redirectedUrl("/products#product-1000"));
+		}
+		then(cartService).should(times(5)).add(null, 1000L);
+	}
+
+	@Test
+	void 회원이_긴_검색어로_담아도_이동_주소에서만_빼고_담기는_그대로_처리한다() throws Exception {
+		MemberUserDetails member = new MemberUserDetails(7L, "tester01", "hash");
+		given(cartService.add(member, 1000L)).willReturn("팔도 왕뚜껑(110g)");
+
+		mockMvc.perform(post("/cart/items").with(csrf()).with(user(member))
+						.param("goodId", "1000").param("keyword", "a".repeat(8_300)))
+				.andExpect(redirectedUrl("/products#product-1000"));
+		then(cartService).should().add(member, 1000L);
+	}
+
+	@Test
+	void 긴_검색어이고_담기가_거부되어도_안내하고_이동_주소는_짧게_유지한다() throws Exception {
+		given(cartService.add(null, 1000L)).willThrow(new InvalidCartRequestException("상품당 최대 99개까지 담을 수 있습니다."));
+
+		mockMvc.perform(post("/cart/items").with(csrf()).param("goodId", "1000").param("keyword", "a".repeat(8_300)))
+				.andExpect(redirectedUrl("/products#product-1000"))
+				.andExpect(flash().attribute("error", "상품당 최대 99개까지 담을 수 있습니다."));
+	}
+
+	@Test
 	void 잘못된_페이지_번호는_담기_후_이동_주소에_붙이지_않는다() throws Exception {
 		given(cartService.add(null, 1000L)).willReturn("팔도 왕뚜껑(110g)");
 

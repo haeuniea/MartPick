@@ -1389,8 +1389,13 @@ summary:focus-visible {
 }
 
 .auth-errors {
+	display: block;
 	margin: 0;
 	padding-left: var(--space-6);
+}
+
+.auth-errors li + li {
+	margin-top: var(--space-1);
 }
 
 .auth-notice {

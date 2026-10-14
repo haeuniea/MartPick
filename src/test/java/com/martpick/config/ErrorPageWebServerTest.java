@@ -80,6 +80,31 @@ class ErrorPageWebServerTest {
 		assertThat(response.body()).doesNotContain("trace").doesNotContain("exception").doesNotContain("message\":\"No");
 	}
 
+	@Test
+	void 오류_경로에_직접_접근하면_오류_화면이_아니라_404로_응답한다() throws Exception {
+		HttpResponse<String> html = get("/error", "text/html");
+
+		assertThat(html.statusCode()).isEqualTo(404);
+		assertThat(html.headers().firstValue("Content-Type").orElse("")).startsWith("text/html");
+		assertThat(html.body()).contains(NOT_FOUND_TITLE).doesNotContain("999").doesNotContain("일시적인 오류");
+		assertNoInternalInformation(html.body());
+	}
+
+	@Test
+	void 오류_경로에_직접_접근해도_JSON_요청에는_404_JSON을_돌려주고_내부_정보는_담지_않는다() throws Exception {
+		HttpResponse<String> json = get("/error", "application/json");
+
+		assertThat(json.statusCode()).isEqualTo(404);
+		assertThat(json.headers().firstValue("Content-Type").orElse("")).contains("json");
+		assertThat(json.body()).contains("404").doesNotContain("999").doesNotContain("trace").doesNotContain("exception");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"/error?x=1", "/error?status=500", "/error?status=404&error=Not+Found"})
+	void 오류_경로에_쿼리를_붙여_접근해도_404이다(String path) throws Exception {
+		assertThat(get(path, "text/html").statusCode()).as(path).isEqualTo(404);
+	}
+
 	private static void assertNoInternalInformation(String body) {
 		for (String term : INTERNAL_TERMS) {
 			assertThat(body).as("오류 화면에 내부 정보(" + term + ")가 없어야 한다").doesNotContain(term);

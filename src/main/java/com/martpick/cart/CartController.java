@@ -33,6 +33,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CartController {
 
+	/** 상품 탐색 화면의 검색창 maxlength와 같다. 이보다 긴 검색어는 이동 주소에 싣지 않는다. */
+	static final int MAX_RETURN_KEYWORD_LENGTH = 50;
+
 	private final CartService cartService;
 	private final ComparisonService comparisonService;
 	private final MartPickProperties properties;
@@ -52,6 +55,8 @@ public class CartController {
 	 * 담기 후에도 상품 탐색 화면의 검색어와 페이지 번호를 유지한다 (PROJECT_SPEC 2-1).
 	 * 페이지 번호는 1 이상의 정수일 때만 이어 붙이고, 범위 보정은 상품 탐색 화면이 맡는다.
 	 * 목록에서 보던 위치로 돌아가도록 담은 상품의 카드 앵커로 이동하고, 그 카드에 결과를 표시하도록 상품 ID를 넘긴다.
+	 * 검색어는 돌아갈 화면을 꾸미는 용도일 뿐이므로, 너무 길거나 제어 문자가 있어 이동 주소를 해치거나 이동한 화면이 거부할 검색어는
+	 * 이동 주소에 싣지 않는다. 담기는 그대로 처리하며, 이동 주소가 컨테이너의 헤더 크기 한도를 넘어 담은 뒤에 오류가 나는 일을 막는다.
 	 */
 	@PostMapping("/items")
 	public String add(@AuthenticationPrincipal MemberUserDetails member, @RequestParam long goodId,
@@ -63,7 +68,7 @@ public class CartController {
 		} catch (InvalidCartRequestException e) {
 			redirectAttributes.addFlashAttribute("error", e.getMessage());
 		}
-		if (StringUtils.hasText(keyword)) {
+		if (StringUtils.hasText(keyword) && isReturnable(keyword.strip())) {
 			redirectAttributes.addAttribute("keyword", keyword.strip());
 		}
 		if (page != null && page.matches("[1-9]\\d{0,9}")) {
@@ -71,6 +76,10 @@ public class CartController {
 		}
 		redirectAttributes.addFlashAttribute("lastGoodId", goodId);
 		return "redirect:/products#product-" + goodId;
+	}
+
+	private static boolean isReturnable(String keyword) {
+		return keyword.length() <= MAX_RETURN_KEYWORD_LENGTH && keyword.chars().noneMatch(Character::isISOControl);
 	}
 
 	@PostMapping("/items/{goodId}/quantity")

@@ -19,7 +19,10 @@
 
 			<div class="alerts" th:if="${#fields.hasErrors('*')}">
 				<ul class="alert alert--error auth-errors" role="alert">
-					<li th:each="message : ${#fields.allErrors()}" th:text="${message}">오류</li>
+					<!-- 검증 오류의 순서는 검증기가 정하므로, 입력란 순서(아이디, 비밀번호, 비밀번호 확인)대로 항목별 오류를 모은다. -->
+					<th:block th:each="field : ${#strings.arraySplit('username,password,passwordLongEnough,passwordWithinByteLimit,passwordConfirmed', ',')}">
+						<li th:each="message : ${#fields.errors(field)}" th:text="${message}">오류</li>
+					</th:block>
 				</ul>
 			</div>
 
