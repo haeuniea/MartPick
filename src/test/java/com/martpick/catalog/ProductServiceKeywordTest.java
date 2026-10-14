@@ -3,7 +3,6 @@ package com.martpick.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -21,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 /**
  * 검색어 검증은 DB 조회 전에 끝나야 한다. 저장소를 대체해 잘못된 검색어에서 DB 조회가 한 번도 일어나지 않는지 확인한다.
@@ -46,21 +46,13 @@ class ProductServiceKeywordTest {
 	}
 
 	@Test
-	void 앞뒤의_공백_탭_개행은_제거한_뒤_검색한다() {
-		given(productRepository.findByNameContainingIgnoreCase(eq("햇반"), any(Pageable.class))).willReturn(emptyPage());
+	void 검색어가_있으면_검색_조건과_상품_ID_순_페이지로_조회한다() {
+		given(productRepository.findAll(anySpecification(), any(Pageable.class))).willReturn(emptyPage());
 
-		productService.search(" \t\n햇반\r\n ", 1);
+		productService.search(" \t\n햇반 210g\r\n ", 1);
 
-		then(productRepository).should().findByNameContainingIgnoreCase(eq("햇반"), any(Pageable.class));
-	}
-
-	@Test
-	void 검색어_중간의_공백은_그대로_유지한다() {
-		given(productRepository.findByNameContainingIgnoreCase(eq("햇반 210g"), any(Pageable.class))).willReturn(emptyPage());
-
-		productService.search("햇반 210g", 1);
-
-		then(productRepository).should().findByNameContainingIgnoreCase(eq("햇반 210g"), any(Pageable.class));
+		then(productRepository).should().findAll(anySpecification(), any(Pageable.class));
+		then(productRepository).shouldHaveNoMoreInteractions();
 	}
 
 	@ParameterizedTest
@@ -78,11 +70,16 @@ class ProductServiceKeywordTest {
 	@ParameterizedTest
 	@ValueSource(strings = {"햇반", "Hat Ban", "진라면 순한맛(5개입)", "%", "_", "100%", "a_b", "\\", "'; drop table product; --", "😀"})
 	void 한글_영문_기호_이모지가_섞인_일반_검색어는_거부하지_않는다(String keyword) {
-		given(productRepository.findByNameContainingIgnoreCase(eq(keyword), any(Pageable.class))).willReturn(emptyPage());
+		given(productRepository.findAll(anySpecification(), any(Pageable.class))).willReturn(emptyPage());
 
 		productService.search(keyword, 1);
 
-		then(productRepository).should().findByNameContainingIgnoreCase(eq(keyword), any(Pageable.class));
+		then(productRepository).should().findAll(anySpecification(), any(Pageable.class));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Specification<Product> anySpecification() {
+		return any(Specification.class);
 	}
 
 	private static Page<Product> emptyPage() {

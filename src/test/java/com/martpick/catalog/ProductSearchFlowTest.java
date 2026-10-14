@@ -51,6 +51,21 @@ class ProductSearchFlowTest {
 				.andExpect(content().string(not(containsString(INVALID_KEYWORD_MESSAGE))));
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = {"마트픽검색햇반", "마트픽검색 햇반(210g)", "햇반 마트픽검색", "마트픽 검색 햇 반 210G", "마트픽검색  햇반"})
+	void 공백_위치가_달라도_같은_상품을_찾는다(String keyword) throws Exception {
+		mockMvc.perform(get("/products").param("keyword", keyword))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString(RICE_NAME)));
+	}
+
+	@Test
+	void 일부_토큰만_일치하면_찾지_않는다() throws Exception {
+		mockMvc.perform(get("/products").param("keyword", "마트픽검색 존재하지않는상품"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(not(containsString(RICE_NAME))));
+	}
+
 	@Test
 	void 앞뒤_공백과_탭_개행은_제거하고_찾는다() throws Exception {
 		mockMvc.perform(get("/products").param("keyword", " \t마트픽검색 햇반\n "))

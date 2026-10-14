@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * 수집된 전체 상품을 검색한다 (PROJECT_SPEC 2-1). 검색어가 비어 있으면 전체 상품을 반환한다.
+ * 검색어는 공백으로 나눈 토큰이 모두 (공백을 뺀) 상품명에 들어 있는 상품을 찾는다.
  * 결과는 상품 ID 순으로 30개씩 나누며, 범위를 벗어난 페이지 번호는 첫 페이지 또는 마지막 페이지로 보정한다.
  */
 @Service
@@ -49,6 +50,6 @@ public class ProductService {
 		PageRequest pageRequest = PageRequest.of(page - 1, PAGE_SIZE, Sort.by("goodId"));
 		return keyword == null
 				? productRepository.findAll(pageRequest)
-				: productRepository.findByNameContainingIgnoreCase(keyword, pageRequest);
+				: productRepository.findAll(ProductNameSpecification.nameContainsAll(ProductNameSpecification.tokens(keyword)), pageRequest);
 	}
 }
