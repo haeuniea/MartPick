@@ -1,6 +1,7 @@
 FROM eclipse-temurin:17-jdk AS build
 WORKDIR /workspace
 COPY gradlew settings.gradle build.gradle ./
+RUN chmod +x gradlew
 COPY gradle gradle
 RUN ./gradlew --no-daemon --version
 COPY src src
