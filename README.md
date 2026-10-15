@@ -1,8 +1,8 @@
-~~# MartPick (마트픽)
+# MartPick (마트픽)
 
 MartPick은 장바구니에 담은 생필품의 총액을 지역별 판매점마다 비교하는 웹서비스입니다. 상품별 최저가가 아니라 한 판매점에서 장바구니 전체를 살 때의 비용을 비교합니다. 한국소비자원의 생필품 가격 정보(공공데이터)를 수집해 PostgreSQL에 저장하고, 이를 바탕으로 가격을 계산합니다.
 
-> **상태**: 주요 기능 구현을 마쳤습니다. Docker 이미지(`Dockerfile`)의 로컬 빌드·실행과 주요 화면 확인도 마쳤습니다. 아직 Render에는 배포하지 않았으며, Render 무료 플랜에 시연용으로 단기 배포하는 것을 준비 중입니다.
+> **상태**: 주요 기능 구현을 마쳤습니다. Docker 이미지(`Dockerfile`)로 Render 무료 플랜에 시연용으로 단기 배포해 검색·장바구니·가격 비교와 회원가입·로그인·로그아웃을 확인했습니다. 배포 주소는 공개하지 않으며, 시연이 끝나면 서비스와 DB를 삭제할 예정입니다.
 
 ## 주요 기능
 
@@ -13,6 +13,30 @@ MartPick은 장바구니에 담은 생필품의 총액을 지역별 판매점마
   - 일부 상품만 가격이 있는 판매점은 확인된 합계와 빠진 상품을 따로 보여 줍니다(부분 비교).
   - 가격 데이터가 없는 상품은 "전국에 없음"과 "선택 지역에만 없음"으로 나누어 안내하며, 임의로 제외하지 않습니다.
 - **회원**: 회원가입, 세션 기반 로그인·로그아웃. 로그인해도 비회원 장바구니를 합치지 않으며, 그 사실을 화면에서 안내합니다.
+
+## 서비스 화면
+
+Render 무료 플랜 배포 환경에서 캡처한 화면입니다(시연용 임시 계정으로 로그인한 상태).
+
+**상품 찾기**: 수집한 전체 상품(604개)을 30개씩 보여 줍니다.
+
+![상품 찾기](docs/images/01-products.png)
+
+**검색**: 검색어 `햇반`의 결과입니다.
+
+![검색 결과](docs/images/02-search.png)
+
+**장바구니**: 비교 전에는 가격을 표시하지 않고, 비교할 시·도를 고릅니다.
+
+![장바구니](docs/images/03-cart.png)
+
+**가격 비교 결과(서울)**: 모든 상품의 가격이 확인된 판매점(완전 비교)과 일부만 확인된 판매점(부분 비교)을 나누어 보여 줍니다.
+
+![가격 비교 결과 - 서울](docs/images/04-compare-seoul.png)
+
+**가격 정보가 없는 상품 안내(대전)**: 선택한 지역에만 가격이 없는 상품을 따로 알려 주고, 상품은 자동으로 빼지 않습니다.
+
+![가격 비교 결과 - 가격 정보 없는 상품 안내](docs/images/05-compare-no-price.png)
 
 ## 기술 스택
 
@@ -53,7 +77,9 @@ docker compose up -d      # PostgreSQL 16 컨테이너 (개발 DB martpick, 테�
 ./gradlew.bat bootRun     # http://localhost:8080, 스키마는 시작 시 Flyway가 적용
 ```
 
-DB 접속은 환경변수(`MARTPICK_DB_HOST`, `MARTPICK_DB_PORT`, `MARTPICK_DB_NAME`, `MARTPICK_DB_USER`, `MARTPICK_DB_PASSWORD`)로 바꿀 수 있습니다. 기본값(`martpick`/`martpick`)은 **로컬 개발 전용**이며 운영에서 쓰면 안 됩니다. 공공데이터 수집에만 `DATA_GO_KR_SERVICE_KEY`가 필요하고, 수집 절차는 [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) 4장을 따릅니다.
+위 명령은 애플리케이션과 DB를 실행하지만 상품·가격 데이터를 자동으로 수집하지는 않습니다(Flyway는 빈 테이블만 만들고, 수집기는 기본으로 꺼져 있습니다). 가격 비교 기능을 사용하려면 별도로 공공데이터 수집을 진행해야 하며, 절차는 [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) 4장을 참고해 주세요.
+
+DB 접속은 환경변수(`MARTPICK_DB_HOST`, `MARTPICK_DB_PORT`, `MARTPICK_DB_NAME`, `MARTPICK_DB_USER`, `MARTPICK_DB_PASSWORD`)로 바꿀 수 있습니다. 기본값(`martpick`/`martpick`)은 **로컬 개발 전용**이며 운영에서 쓰면 안 됩니다. 공공데이터 수집에만 `DATA_GO_KR_SERVICE_KEY`가 필요합니다.
 
 ## 테스트
 
@@ -77,10 +103,10 @@ DB 접속은 환경변수(`MARTPICK_DB_HOST`, `MARTPICK_DB_PORT`, `MARTPICK_DB_N
 **보안과 의존성**
 - Spring Boot 3.5.x는 2026-06-30에 OSS 지원이 종료되어 새 보안 패치를 기대할 수 없습니다. 이 프로젝트는 3.5.16을 유지합니다.
 - `spring-webmvc` 6.2.19의 취약점 2건(GHSA-j9f9-w8pj-32f8, GHSA-pc63-qcmh-9cmg)은 **해결되지 않았습니다.** 6.2.x의 수정 버전(6.2.20)은 Enterprise Support 전용이고 공개 수정은 7.0.9부터라, 해결하려면 Spring Boot 4.x로 올려야 합니다. 정적 분석에서는 이 앱이 발생 조건을 쓰지 않는 것으로 확인했을 뿐입니다. 조회 결과와 판단 근거는 [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) 6장에 있습니다.
-- 로그인 시도 횟수 제한은 없고, HTTPS·쿠키 `Secure`/`SameSite`·세션 만료 시간은 저장소에 설정되어 있지 않습니다.
+- 로그인 시도 횟수 제한은 없습니다. HTTPS·쿠키 `Secure`/`SameSite`·세션 만료 시간은 저장소(`application.yml`)에 설정되어 있지 않고, 배포에서는 환경변수로 지정했습니다.
 
 ## 문서
 
 - [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md): 요구사항, 화면, 비즈니스 규칙, 취약점 조회 결과
 - [docs/API_RESEARCH.md](docs/API_RESEARCH.md): 공공데이터 API 실제 응답으로 확인한 사실과 미검증 사항
-- [AI_COLLABORATION.md](AI_COLLABORATION.md): AI Agent(Claude Code)와의 협업 기록~~
+- [AI_COLLABORATION.md](AI_COLLABORATION.md): AI Agent(Claude Code)와의 협업 기록

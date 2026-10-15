@@ -1,13 +1,13 @@
 # MartPick(마트픽) 서비스 명세
 
-> 문서 상태: **주요 기능 구현 완료. Render 무료 플랜 단기 배포를 준비 중이며 아직 배포하지 않았습니다.** · 2026-10-15 정리
+> 문서 상태: **주요 기능 구현 완료. Render 무료 플랜에 단기 시연용으로 배포해 동작을 확인했으며, 시연 후 서비스와 DB를 삭제하는 것을 전제로 합니다.** · 2026-10-15 정리
 >
 > - 이 문서는 현재 구현된 MartPick의 서비스 기획, 화면별 기능, 비즈니스 규칙, 예외 처리를 담습니다. 이 문서만으로 서비스 요구사항을 이해할 수 있도록 작성합니다.
 > - 규칙의 근거가 된 실제 API 응답 사실(필드, 건수, 오류 사례, 미검증 사항)은 [API_RESEARCH.md](API_RESEARCH.md)에 있습니다.
 > - **구현한 것**: 전체 상품 수집과 수집 안전장치(4장), 상품 검색, 비회원 세션 장바구니와 회원 DB 장바구니, 지역별 가격 비교와 가격 데이터 부재 안내, 회원가입·로그인·로그아웃, 한국어 오류 화면(2장)
-> - **구현하지 않은 것**: 7장의 제외 기능, 로그인 시도 제한, V7 교차 검증(미확정), 재수집 진단 보고(후보). 운영 환경 설정(HTTPS·쿠키·세션 만료 등)도 적용하지 않았습니다(6-5).
+> - **구현하지 않은 것**: 7장의 제외 기능, 로그인 시도 제한, V7 교차 검증(미확정), 재수집 진단 보고(후보). 저장소의 `application.yml`에는 운영 환경 설정(프록시 헤더·세션 쿠키·세션 만료 등)을 넣지 않았고, Render 시연 배포에서는 환경변수로 지정했습니다. CSP는 적용하지 않았습니다(6-5).
 > - 개발 DB는 첫 전체 수집 결과(상품 604개, 가격 113,843건, 수집 이력 1건)를 반영한 상태입니다(API_RESEARCH 10장).
-> - 최신 전체 테스트: `main`의 전체 테스트 실행 시점 HEAD `577d003`에서 `./gradlew.bat cleanTest test` 657건 성공, 실패 0, 건너뜀 0. 로컬 Windows 환경의 결과이며 전체 테스트를 Docker 환경에서 실행하지는 않았습니다. Docker 이미지의 로컬 빌드·기동·주요 화면 확인은 마쳤고 Render에는 배포하지 않았습니다(6-3, 6-5).
+> - 최신 전체 테스트: `main`의 전체 테스트 실행 시점 HEAD `577d003`에서 `./gradlew.bat cleanTest test` 657건 성공, 실패 0, 건너뜀 0. 로컬 Windows 환경의 결과이며 전체 테스트를 Docker 환경에서 실행하지는 않았습니다. Docker 이미지는 로컬에서 확인했고, Render 무료 플랜에 배포해 주요 화면과 회원 흐름을 확인했습니다(6-3, 6-5).
 > - 미해결 취약점: `spring-webmvc` 6.2.19의 2건(6-4).
 
 ---
@@ -519,12 +519,11 @@ MartPick(마트픽)
 규칙의 상세는 2-4(인증), 2-2(장바구니 격리), 4-4(인증키)에 있습니다. 구현 구성은 다음과 같습니다.
 
 - 세션 기반 폼 로그인, BCrypt 해시 저장(평문 저장·로그 기록 금지), CSRF 기본값 유지, 로그인 시 세션 ID 재발급.
-- 허용 경로는 `/`(`/products`로 이동), `/products`, `/cart`와 그 하위(`/cart/**`, 담기·수량 변경·삭제 POST), `/compare`, `/login`, `/signup`, 정적 CSS(`/css/**`), `/error`이며 나머지는 `denyAll`로 거부합니다. `/error`는 컨테이너가 오류를 넘겨 줄 때를 위해 허용하지만, 주소창으로 직접 열면(오류 상태 속성이 없는 요청) `DirectErrorAccessConfig`가 404로 응답합니다(2-5). 거부 응답은 404 또는 403입니다(2-4).
+- 허용 경로는 `/`(`/products`로 이동), `/products`, `/cart`와 그 하위(`/cart/**`, 담기·수량 변경·삭제 POST), `/compare`, `/login`, `/signup`, 정적 CSS(`/css/**`), `/error`이며 나머지는 `denyAll`로 거부합니다(거부 응답은 404 또는 403, 2-4). `/error`는 컨테이너가 오류를 넘겨 줄 때를 위해 허용하지만 주소창으로 직접 열면 `DirectErrorAccessConfig`가 404로 응답합니다(2-5).
 - 로그인 상태에서의 POST `/login`은 `AuthenticatedLoginGuardFilter`가 막습니다. 이 가드는 로그인 필터와 같은 기준(컨테이너가 디코딩한 경로)으로 요청을 판단합니다(2-4).
 - Spring Boot 기본 사용자 자동 설정(`UserDetailsServiceAutoConfiguration`)은 `application.yml`에서 제외합니다. 자동 생성 기본 사용자(`user`)가 생기지 않게 하려는 것이며, `UserDetailsService`는 `MemberUserDetailsService` 하나뿐이고 `user`로 로그인할 수 없음을 `SecurityConfigTest`로 확인합니다. 인증 주체는 회원 ID를 포함한 `MemberUserDetails`입니다.
 - 비밀번호 해시용 `PasswordEncoder`(BCrypt) 빈은 웹 환경에만 등록되는 `SecurityConfig`와 분리해 조건 없이 등록합니다. 웹 서버 없는 수집 실행에서도 `MemberService`가 만들어지기 때문입니다.
-- 회원 장바구니는 요청 값이 아니라 인증 정보의 회원 ID로만 조회·수정합니다(R11, 2-2).
-- 오류 화면에는 예외 이름, 스택 트레이스, DB 정보를 표시하지 않습니다(2-5).
+- 회원 장바구니는 요청 값이 아니라 인증 정보의 회원 ID로만 조회·수정합니다(R11, 2-2). 오류 화면에는 예외 이름, 스택 트레이스, DB 정보를 표시하지 않습니다(2-5).
 
 ### 6-3. 테스트
 
@@ -533,49 +532,55 @@ MartPick(마트픽)
 - 대상: `main` 브랜치, 전체 테스트 실행 시점의 HEAD `577d003` (현재 HEAD가 아닐 수 있음. 실행 당시 작업 트리에는 문서 변경만 있었음)
 - 명령: `./gradlew.bat cleanTest test`
 - 결과: **전체 657건 성공, 실패 0건, 오류 0건, 건너뜀 0건** (BUILD SUCCESSFUL, 2026-10-15 실행)
-- 환경: 로컬 Windows. 로컬 기본 JDK는 21이고 `build.gradle`의 Java 툴체인은 17입니다(JDK 17.0.20이 설치되어 있음). Gradle을 실행하는 JVM과 컴파일·테스트에 쓰는 툴체인 JVM은 다르며, 테스트가 실제로 쓴 JVM 버전은 결과 파일로 확인하지 못했습니다. 테스트 DB `martpick_test`. **전체 테스트를 Docker 환경에서 실행하지는 않았습니다.** Docker 이미지의 로컬 빌드·기동·주요 화면 확인은 6-5를 참고하세요.
+- 환경: 로컬 Windows, 테스트 DB `martpick_test`. 로컬 기본 JDK는 21이고 `build.gradle`의 Java 툴체인은 17입니다(JDK 17.0.20 설치). 컴파일·테스트는 툴체인 JVM으로 실행되며, 테스트가 실제로 쓴 JVM 버전은 결과 파일로 확인하지 못했습니다. **전체 테스트를 Docker 환경에서 실행하지는 않았습니다**(Docker 이미지 확인은 6-5).
 - 실행 전후로 개발 DB의 테이블별 건수와 시퀀스가 같았고, 테스트 DB는 모든 테이블이 0건이었습니다(시퀀스만 증가).
 
 **테스트 DB와 개발 DB의 분리**
 
-- DB를 쓰는 테스트는 `test` 프로필(`@ActiveProfiles("test")`)로 `martpick_test`에 연결합니다. `build.gradle`의 `test` 태스크도 `spring.profiles.active=test`를 지정합니다.
-- 테스트 DB로 앱을 띄울 때는 `./gradlew.bat bootRunTest [-PtestServerPort=포트]`를 사용합니다. 일반 `bootRun`은 개발 DB `martpick`에 연결합니다. `application-test.yml`은 `src/test/resources`에만 있어 `bootRun` 클래스패스에 없으므로, `bootRun`에 프로필만 `test`로 주면 테스트 DB가 아니라 개발 DB에 연결됩니다(실제로 발생한 사고, AI_COLLABORATION.md의 "개발 DB 오염 사고와 재발 방지").
-  - `bootRunTest`는 접속 URL을 시스템 속성으로 `martpick_test`에 고정하고, 호스트는 `localhost`/`127.0.0.1`만 허용합니다. `--args`·JVM 인자는 거부하고, 자식 프로세스에는 허용 목록 환경변수만 전달하며, 설정 파일 위치를 `classpath:/application.yml`로 고정합니다. 서버는 `127.0.0.1`에만 바인딩해 이 PC에서만 접속할 수 있습니다(`server.address`).
-  - 한계: Gradle 단계에서 입력만 검사하며 Spring Boot가 최종 해석한 값을 비교하지는 않습니다. 이 태스크를 거치지 않는 실행(IDE, `java -jar`, 프로필만 지정한 `bootRun`)의 접속 대상은 보장하지 않으며, 그런 방식으로 띄운 서버에서는 기동 로그의 `Database:` 줄을 확인하기 전에 DB 쓰기 검증을 하지 않습니다.
-- `DataCollectorTest`는 매번 테스트 DB의 `region`·`store`·`product`·`price`·`member`·`cart_item`·`collection_run`을 전체 삭제합니다. 삭제 전에 `TestDatabaseGuard`(`src/test/java/com/martpick/testsupport`)가 실제 연결 대상을 확인하며, 삭제는 이 도우미가 검증 후에만 수행합니다.
-  - 검증 기준: 연결된 서버가 알려주는 `current_database()`와 드라이버가 보고하는 URL의 DB 이름이 **모두 `martpick_test`와 정확히 같아야** 합니다. 다르거나 확인할 수 없으면 아무것도 삭제하지 않고 `IllegalStateException`으로 즉시 실패합니다. 접속 URL이 환경변수(`MARTPICK_TEST_DB_NAME`, `SPRING_DATASOURCE_URL`)나 시스템 속성으로 바뀌어도 설정값이 아니라 실제 연결을 보므로 막힙니다.
-  - 검증: `TestDatabaseGuardTest` 25개는 DB에 연결하지 않고 `JdbcTemplate`을 대체해 잘못된 대상에서 삭제 SQL이 실행되지 않음을 확인합니다. 당시 협업 기록에 따르면 구현을 일부러 망가뜨린 변형 3종에서 각각 테스트가 실패했고, `martpick_test`의 스키마를 복제한 임시 DB(확인 후 삭제)에서 세 경로로 `DataCollectorTest`를 실행했을 때 45개 모두가 안전장치 메시지로 실패하고 표식 행은 그대로였습니다. 개발 DB로 직접 연결해 실행하는 검증은 하지 않았습니다.
-  - 한계: 이 검증은 `DataCollectorTest`의 전체 삭제에만 적용됩니다. 다른 DB 테스트는 롤백되거나 자기가 만든 데이터만 삭제하지만 연결 대상 검증은 없습니다. 테스트 컨텍스트가 시작될 때 Flyway가 연결된 DB에 먼저 마이그레이션을 적용하며, 이 시점은 검증보다 앞섭니다. 그러므로 테스트를 실행하는 셸에 `SPRING_DATASOURCE_URL`이나 `MARTPICK_TEST_DB_NAME`을 설정하지 않아야 합니다.
+- DB를 쓰는 테스트는 `test` 프로필(`@ActiveProfiles("test")`, `build.gradle`의 `test` 태스크도 지정)로 `martpick_test`에 연결합니다.
+- 테스트 DB로 앱을 띄울 때는 `./gradlew.bat bootRunTest [-PtestServerPort=포트]`를 씁니다. `application-test.yml`은 `src/test/resources`에만 있어 `bootRun`에 프로필만 `test`로 주면 개발 DB `martpick`에 연결됩니다(실제로 발생한 사고, AI_COLLABORATION.md의 "개발 DB 오염 사고와 재발 방지"). `bootRunTest`는 접속 URL을 시스템 속성으로 `martpick_test`에 고정하고, 호스트는 `localhost`/`127.0.0.1`만 허용하며, `--args`·JVM 인자를 거부합니다. 자식 프로세스에는 허용 목록 환경변수만 전달하고 설정 파일 위치를 `classpath:/application.yml`로 고정하며, 서버는 `127.0.0.1`에만 바인딩합니다(`server.address`).
+  - 한계: Gradle 단계에서 입력만 검사하며 Spring Boot가 최종 해석한 값을 비교하지는 않습니다. 이 태스크를 거치지 않는 실행(IDE, `java -jar`, 프로필만 지정한 `bootRun`)의 접속 대상은 보장하지 않으며, 그런 서버에서는 기동 로그의 `Database:` 줄을 확인하기 전에 DB 쓰기 검증을 하지 않습니다.
+- `DataCollectorTest`는 매번 테스트 DB의 `region`·`store`·`product`·`price`·`member`·`cart_item`·`collection_run`을 전체 삭제합니다. 삭제 전에 `TestDatabaseGuard`(`src/test/java/com/martpick/testsupport`)가 실제 연결 대상을 확인하고 검증 후에만 삭제합니다.
+  - 기준: 서버가 알려주는 `current_database()`와 드라이버가 보고하는 URL의 DB 이름이 **모두 `martpick_test`와 정확히 같아야** 합니다. 다르거나 확인할 수 없으면 아무것도 삭제하지 않고 `IllegalStateException`으로 실패하며, 접속 URL이 환경변수(`MARTPICK_TEST_DB_NAME`, `SPRING_DATASOURCE_URL`)나 시스템 속성으로 바뀌어도 실제 연결을 보므로 막힙니다.
+  - 검증: `TestDatabaseGuardTest` 25개가 DB 없이 `JdbcTemplate`을 대체해 잘못된 대상에서 삭제 SQL이 실행되지 않음을 확인합니다. 당시 협업 기록에 따르면 구현을 망가뜨린 변형 3종에서 각각 테스트가 실패했고, 스키마를 복제한 임시 DB(확인 후 삭제)에서 `DataCollectorTest` 45개가 모두 안전장치 메시지로 실패하며 표식 행이 그대로였습니다. 개발 DB로 직접 연결한 검증은 하지 않았습니다.
+  - 한계: 이 검증은 `DataCollectorTest`의 전체 삭제에만 적용됩니다. 다른 DB 테스트는 롤백되거나 자기가 만든 데이터만 삭제하지만 연결 대상 검증은 없고, 테스트 컨텍스트가 시작될 때 Flyway가 연결된 DB에 먼저 마이그레이션을 적용하는 시점은 검증보다 앞섭니다. 그러므로 테스트를 실행하는 셸에 `SPRING_DATASOURCE_URL`이나 `MARTPICK_TEST_DB_NAME`을 설정하지 않아야 합니다.
 
 ### 6-4. 의존성 취약점
 
-런타임 클래스패스 72개 라이브러리의 `group:artifact:version` 좌표만 OSV API(`api.osv.dev`)로 조회했습니다(키·환경변수·접속 정보는 보내지 않음, 조회일 2026-10-01과 2026-10-10). GitHub Dependabot 알림은 이 비공개 저장소에서 꺼져 있어(HTTP 403) 확인할 수 없었고, 저장소 설정은 바꾸지 않았습니다. OSV는 알려진 취약점의 조회 결과이므로 이후 공개되는 항목은 반영되지 않습니다.
+런타임 클래스패스 72개 라이브러리의 `group:artifact:version` 좌표만 OSV API(`api.osv.dev`)로 조회했습니다(키·환경변수·접속 정보는 보내지 않음, 조회일 2026-10-01과 2026-10-10). GitHub Dependabot 알림은 이 비공개 저장소에서 꺼져 있어(HTTP 403) 확인할 수 없었고 저장소 설정은 바꾸지 않았습니다. OSV는 알려진 취약점의 조회 결과이므로 이후 공개되는 항목은 반영되지 않습니다.
 
-영향 판단은 두 가지로 구분하며, 어느 쪽도 실제 공격 시도로 확인한 것이 아니고 "영향 없음"으로 단정하지 않습니다. **조건 불충족 확인(정적)**은 취약점이 요구하는 설정·어노테이션·모듈이 이 앱과 클래스패스에 없음을 소스·jar 검색으로 확인한 경우입니다. **추가 확인 필요**는 진입점이 보이지 않지만 전수 확인은 하지 못한 경우입니다.
+영향 판단은 두 가지로 구분하며, 어느 쪽도 실제 공격 시도로 확인한 것이 아니고 "영향 없음"으로 단정하지 않습니다. **조건 불충족 확인(정적)**은 취약점이 요구하는 설정·어노테이션·모듈이 이 앱과 클래스패스에 없음을 소스·jar 검색으로 확인한 경우이고, **추가 확인 필요**는 진입점이 보이지 않지만 전수 확인은 하지 못한 경우입니다.
 
-**수정 버전 적용으로 해결한 것** — `build.gradle`에서 `tomcat.version` 10.1.60, `jackson-bom.version` 2.21.7, `log4j2.version` 2.25.5로 재정의했습니다(의존성 추가·제거 없음). 런타임·테스트 클래스패스 모두에서 `tomcat-embed-core/el/websocket` 10.1.60, Jackson 모듈 2.21.7(`jackson-annotations`는 2.21 그대로), `log4j-api`/`log4j-to-slf4j` 2.25.5가 적용된 것을 확인했습니다. Spring Boot 3.5.16이 시험한 조합은 아니므로 재정의 뒤 전체 테스트와 실제 Tomcat 10.1.60을 쓰는 `LoginGuardWebServerTest`로 확인했고, 재조회 결과 아래 2건만 남았습니다.
+**수정 버전 적용으로 해결한 것** — `build.gradle`에서 `tomcat.version` 10.1.60, `jackson-bom.version` 2.21.7, `log4j2.version` 2.25.5로 재정의했습니다(의존성 추가·제거 없음). 런타임·테스트 클래스패스 모두에서 `tomcat-embed-core/el/websocket` 10.1.60, Jackson 모듈 2.21.7(`jackson-annotations`는 2.21 그대로), `log4j-api`/`log4j-to-slf4j` 2.25.5가 적용된 것을 확인했습니다. Spring Boot 3.5.16이 시험한 조합은 아니므로 재정의 뒤 전체 테스트와 실제 Tomcat 10.1.60을 쓰는 `LoginGuardWebServerTest`로 확인했고, 재조회 결과 아래 `spring-webmvc` 2건만 남았습니다. 재정의 전 보고 내역:
 
-- 재정의 전 보고 내역(2026-10-01): `tomcat-embed-core` 10.1.55 3건(GHSA-9xv2-5v5q-p794, GHSA-gcx9-497g-6cp6, GHSA-h3x4-894j-xpx5)은 Tomcat 컨테이너 인증 기능에 관한 것으로 이 앱이 쓰지 않습니다(조건 불충족 확인, 정적). `jackson-databind` 2.21.4 9건은 신뢰할 수 없는 JSON의 역직렬화에 관한 것으로, 어노테이션·설정이 필요한 6건은 조건 불충족 확인(정적), 기본 매퍼로 `Duration`·`InetAddress`·`Path`를 바인딩할 때의 3건(GHSA-q4xh-88c3-wmh7, GHSA-vvgp-rfg2-7rr6, GHSA-wjgm-6hv5-3cvf)은 추가 확인 필요였습니다. `log4j-api` 2.24.3 1건(GHSA-qv9r-c865-cp47)은 `log4j-core`가 클래스패스에 없어 조건 불충족 확인(정적)입니다. 2026-10-10 재조회에서 `jackson-core` 2.21.4 2건이 추가되었습니다(GHSA-7hhh-6rmp-j9qf 조건 불충족 확인, GHSA-p6pp-m3f8-5c89 추가 확인 필요). 컨트롤러에 `@RequestBody`·`@ResponseBody`·`@RestController`가 없고 JSON 입력 진입점은 찾지 못했으나, 서드파티 내부 사용처까지 전수 검증하지는 못했습니다.
+- `tomcat-embed-core` 10.1.55 3건(GHSA-9xv2-5v5q-p794, GHSA-gcx9-497g-6cp6, GHSA-h3x4-894j-xpx5): Tomcat 컨테이너 인증 기능이며 이 앱은 쓰지 않음(조건 불충족, 정적).
+- `jackson-databind` 2.21.4 9건: 어노테이션·설정이 필요한 6건은 조건 불충족(정적), 기본 매퍼로 `Duration`·`InetAddress`·`Path`를 바인딩할 때의 3건(GHSA-q4xh-88c3-wmh7, GHSA-vvgp-rfg2-7rr6, GHSA-wjgm-6hv5-3cvf)은 추가 확인 필요.
+- `log4j-api` 2.24.3 1건(GHSA-qv9r-c865-cp47): `log4j-core`가 클래스패스에 없음(조건 불충족, 정적).
+- `jackson-core` 2.21.4 2건(2026-10-10 재조회에서 추가): GHSA-7hhh-6rmp-j9qf는 조건 불충족(정적), GHSA-p6pp-m3f8-5c89는 추가 확인 필요.
+
+컨트롤러에 `@RequestBody`·`@ResponseBody`·`@RestController`가 없고 JSON 입력 진입점은 찾지 못했으나, 서드파티 내부 사용처까지 전수 검증하지는 못했습니다.
 
 **해결되지 않은 취약점** — `spring-webmvc` 6.2.19:
 
 - GHSA-j9f9-w8pj-32f8: SSE에서 뷰 조각을 렌더링할 때 스트림이 손상됩니다.
 - GHSA-pc63-qcmh-9cmg: `XsltView`를 쓰고 `/**` 매핑에서 뷰 이름이 명시되지 않을 때 SSRF·RCE가 가능합니다.
-- 소스에 `SseEmitter`·`event-stream`·`XsltView` 사용이 없어 **정적 분석에서 발생 조건을 찾지 못했습니다.** 그러나 영향 범위는 6.2.0~6.2.19이고 OSS 수정은 Spring Framework 7.0.9부터이며 6.2.x의 OSS 수정 버전은 없습니다(Spring 공지 기준 6.2.20은 Enterprise Support 전용이며, 심각도는 GitHub 권고문 9.8과 Spring 공지의 Low·Medium으로 서로 다르게 표시됨)(Maven Central의 6.2.x 최신이 6.2.19). 따라서 **해결되지 않았고, 해결된 것으로 표시하지 않습니다.**
-- 해결하려면 Spring Framework 7.0.9 이상, 즉 Spring Boot 4.x 업그레이드가 필요합니다(Boot 4.0.x OSS 지원은 2026-12-31, 4.1.x는 2027-07-31까지). 요구사항(3.5.x) 변경과 Tomcat 11·Jackson 3 기본화·스타터 모듈화 등 메이저 마이그레이션을 수반하는 별도 결정이며 진행하지 않았습니다.
-- 3.5.x는 OSS 지원이 끝났으므로 앞으로 새 취약점이 보고되어도 공개 배포로 수정을 받을 수 없습니다.
+- 소스에 `SseEmitter`·`event-stream`·`XsltView` 사용이 없어 **정적 분석에서 발생 조건을 찾지 못했습니다.** 그러나 영향 범위는 6.2.0~6.2.19이고 OSS 수정은 Spring Framework 7.0.9부터이며 6.2.x의 OSS 수정 버전은 없습니다(Maven Central의 6.2.x 최신은 6.2.19). Spring 공지 기준 6.2.20은 Enterprise Support 전용이고, 심각도는 GitHub 권고문 9.8, Spring 공지 Low·Medium으로 다르게 표시됩니다. 따라서 **해결되지 않았고, 해결된 것으로 표시하지 않습니다.**
+- 해결하려면 Spring Framework 7.0.9 이상, 즉 Spring Boot 4.x 업그레이드가 필요합니다(Boot 4.0.x OSS 지원은 2026-12-31, 4.1.x는 2027-07-31까지). 요구사항(3.5.x) 변경과 Tomcat 11·Jackson 3 기본화·스타터 모듈화 등 메이저 마이그레이션을 수반하는 별도 결정이며 진행하지 않았습니다. 3.5.x는 OSS 지원이 끝났으므로 앞으로 새 취약점이 보고되어도 공개 배포로 수정을 받을 수 없습니다.
 
-### 6-5. 운영 환경 제약과 배포 계획
+### 6-5. 운영 환경 제약과 배포 결과
 
-운영 환경에서 **적용하지 않은 것**: HTTPS와 프록시 뒤 forward-headers, 세션 쿠키 `Secure`·`SameSite`, 세션 만료 명시(현재 서버 기본값), 로그인 시도 제한, CSP 등 추가 보안 헤더, 운영 DB 접속 정보 주입 방식과 로컬 기본 비밀번호 폴백(`application.yml`의 `martpick`) 제거.
+저장소(`application.yml`)에 **설정하지 않은 것**: HTTPS와 프록시 뒤 forward-headers, 세션 쿠키 `Secure`·`SameSite`, 세션 만료 명시(서버 기본값), 로그인 시도 제한, CSP 등 추가 보안 헤더, 로컬 기본 비밀번호 폴백(`martpick`) 제거. Render 배포에서는 이 중 forward-headers, 쿠키 `Secure`·`SameSite`, 세션 만료, DB 접속 정보를 환경변수로 지정했습니다. **로그인 시도 제한과 CSP는 적용하지 않았습니다.**
 
-- 배포 방식은 Render 무료 플랜의 Docker 웹 서비스와 무료 PostgreSQL을 단기 시연용으로 쓰는 것입니다. 아직 Render에 배포하지 않았습니다. 운영 설정은 `application.yml`을 바꾸지 않고 환경변수로 지정할 계획입니다.
-- Docker 이미지: 멀티스테이지 `Dockerfile`(Java 17, Gradle Wrapper로 `bootJar -x test`)과 `.dockerignore`를 추가했습니다. 비루트 사용자로 실행하고, `PORT` 환경변수(없으면 8080)로 포트를 정하며, DB 접속 정보는 환경변수로 받습니다. 이미지에 DB 비밀번호와 API 키는 들어 있지 않습니다.
-- 로컬 Docker 확인 결과(개발 DB `martpick`에 연결): 이미지 빌드 성공(약 1분 38초, 약 167MB), Flyway는 적용 완료 상태로 인식(변경 없음), `/products`·검색·담기·`/cart`·`/compare` 정상 응답, CSRF 토큰 없는 POST 403, 기동 로그에 민감정보 없음, 재시작 후 정상 기동(세션 장바구니는 소멸). 실행 전후로 개발 DB의 건수·시퀀스·변경 통계가 같았습니다.
-- 환경변수로 지정할 값(계획): `SERVER_FORWARD_HEADERS_STRATEGY=native`, `SERVER_SERVLET_SESSION_COOKIE_SECURE=true`, `SERVER_SERVLET_SESSION_COOKIE_SAME_SITE=lax`, `SERVER_SERVLET_SESSION_TIMEOUT=30m`. 로컬에서 프록시 헤더를 흉내 내어 쿠키 속성과 `https` 리다이렉트를 확인했으며, 실제 Render 환경에서는 확인하지 않았습니다.
-- 확인하지 못한 것: 로그인·회원가입·회원 장바구니는 개발 DB에 쓰기가 생겨 컨테이너에서 실행하지 않았습니다. CPU 0.1·메모리 512MB로 제한한 컨테이너에서 기동에 약 137~162초가 걸렸고(메모리 약 259MiB), 같은 환경에서 존재하지 않는 계정의 로그인 실패 1회가 0.57~2.8초였습니다. Render 무료 플랜의 실제 CPU와 포트 감지 대기 시간은 확인하지 못했습니다.
-- 운영에서는 공공데이터 수집기를 실행하지 않습니다(`martpick.collect.run=false`). 개발 DB의 상품·가격 데이터를 옮겨 쓰며, 로컬 테스트 회원 데이터는 옮기지 않습니다.
-- 비회원 장바구니는 서버 세션에 저장되므로 서비스가 재시작되면 사라지고 로그인 상태도 풀립니다. 회원 장바구니는 DB에 저장됩니다.
+- 배포 방식: Render 무료 플랜의 Docker 웹 서비스(Singapore)와 무료 PostgreSQL 16을 단기 시연용으로 썼습니다. 시연 후 서비스와 DB를 삭제하는 것을 전제로 하며 배포 주소는 문서에 적지 않습니다. 멀티스테이지 `Dockerfile`(Java 17, `bootJar -x test`)과 `.dockerignore`를 쓰고, 비루트 사용자로 실행하며, `PORT`(없으면 8080)와 DB 접속 정보는 환경변수로 받습니다. 이미지에 DB 비밀번호와 API 키는 들어 있지 않습니다.
+- 로컬 Docker 확인(개발 DB `martpick`에 연결): 이미지 빌드 성공(약 1분 38초, 약 167MB), Flyway 적용 완료 상태로 인식(변경 없음), 주요 화면 정상 응답, 기동 로그에 민감정보 없음, 재시작 후 정상 기동(세션 장바구니는 소멸). 실행 전후로 개발 DB의 건수·시퀀스·변경 통계가 같았습니다.
+- Render에 등록한 환경변수(사용자 보고): `MARTPICK_DB_HOST`(Internal Hostname)·`MARTPICK_DB_PORT`·`MARTPICK_DB_NAME`·`MARTPICK_DB_USER`·`MARTPICK_DB_PASSWORD`, `SERVER_FORWARD_HEADERS_STRATEGY=native`, `SERVER_SERVLET_SESSION_COOKIE_SECURE=true`, `SERVER_SERVLET_SESSION_COOKIE_SAME_SITE=lax`, `SERVER_SERVLET_SESSION_TIMEOUT=30m`. 수집기를 켜는 `MARTPICK_COLLECT_RUN`과 `DATA_GO_KR_SERVICE_KEY`는 등록하지 않았습니다. DB 연결, `https` 리다이렉트, 쿠키 속성은 배포된 서비스의 동작으로 확인했고, 세션 만료 값은 등록했다는 사용자 보고에 근거하며 동작은 확인하지 않았습니다.
+- 첫 배포 실패: Docker 빌드의 `./gradlew --no-daemon --version`에서 종료 코드 126(실행 권한 없음)으로 실패했습니다. `gradlew`의 Git 파일 모드가 100644였고 로컬 Docker Desktop은 실행 권한을 붙여 주어 로컬에서는 드러나지 않았습니다. `RUN chmod +x gradlew`를 추가한 두 번째 배포가 성공(Live)했습니다.
+- DB 복원: 개발 DB `martpick`에서 `pg_dump -Fc --no-owner --no-acl`(`member`·`cart_item` 데이터 제외)로 만든 덤프를 Render PostgreSQL 16의 빈 DB `martpick`에 `pg_restore --no-owner --no-acl --exit-on-error --single-transaction`으로 복원했습니다(종료 코드 0). 복원 전에 대상 호스트(External Hostname 전체 일치)·DB 이름·서버 버전(16.x)·빈 `public` 스키마를 확인했고, 복원 후 읽기 전용 쿼리로 product 604, store 630, price 113,843, region 18, flyway_schema_history 2(V1·V2), collection_run 1, member 0, cart_item 0, 기준 조사일 가격 보유 상품 583, 제외 판매점 4, 시퀀스(cart_item 18, collection_run 1, member 22, price 116781)가 개발 DB와 같음을 확인했습니다(DB 크기 약 23MB). 접속 정보는 사용자가 숨김 입력으로 직접 넣었고 채팅·로그·Git에 남기지 않았으며 로컬 DB는 변경하지 않았습니다.
+- 배포된 서비스에서 확인한 것(읽기 전용 요청): `GET /`가 `https://…/products`로 리다이렉트, `/products` 200(상품 카드 30개), 검색(`햇반`, `우유 1L`, `서울우유흰우유`)과 제어 문자 검색어 400, 세션 쿠키 `Secure; HttpOnly; SameSite=Lax`, 응답 헤더 `X-Frame-Options: DENY`·`X-Content-Type-Options: nosniff`·`Cache-Control: no-store`, CSRF 토큰 없는 POST(`/login`, `/cart/items`) 403, 담기 302, `/cart` 200, `/compare` 서울 200(판매점 카드와 금액이 로컬 Docker 결과와 같음)과 지역 없이 호출하면 302, `/login`·`/signup` 200, `/admin`·`/error`·`/actuator/health`·`GET /logout` 404. 이어지는 `/products` 요청은 약 0.35~0.65초, 비교 첫 요청은 약 5.5초였습니다.
+- 사용자가 직접 확인한 것(사용자 보고, AI가 독립적으로 관찰한 것은 아님): 회원가입, 로그인, 로그인 전에 보던 화면으로의 복귀, 장바구니 담기와 장바구니 화면, 서울 지역 가격 비교, 로그아웃 후 상태, 재로그인 후 회원 장바구니 유지.
+- 로컬 부하 시험(Render 수치가 아님): CPU 0.1·메모리 512MB로 제한한 로컬 컨테이너에서 기동에 약 137~162초가 걸렸고(메모리 약 259MiB), 같은 환경에서 존재하지 않는 계정의 로그인 실패 1회가 0.57~2.8초였습니다. 로그인·회원가입은 이 로컬 컨테이너에서는 개발 DB에 쓰기가 생겨 실행하지 않았습니다.
+- 확인하지 못한 것: Render 서비스 로그(기동 시간, 민감정보 노출 여부), 절전 후 첫 요청의 지연 시간, Render 무료 플랜의 실제 CPU와 포트 감지 대기 시간, Render DB의 외부 접근 허용 IP 규칙을 닫았는지. 서비스가 Render 대시보드에서 Live 상태임은 사용자가 보고했습니다.
+- 운영에서는 공공데이터 수집기를 실행하지 않습니다(`martpick.collect.run=false`). 개발 DB의 상품·가격 데이터를 옮겼고 회원·장바구니 데이터는 옮기지 않았습니다. 비회원 장바구니는 서버 세션에 저장되므로 재시작하면 사라지고 로그인 상태도 풀리며, 회원 장바구니는 DB에 저장됩니다.
 
 ---
 
@@ -598,7 +603,7 @@ MartPick(마트픽)
 
 - V7(판매점 기준 교차 검증): 채택 여부 미확정(4-1-1).
 - 재수집 시 상품별 가격 건수 변화를 보고하는 진단 기능: 후보일 뿐 구현하지 않았습니다(4-1-1).
-- 운영 환경 설정: 6-5 참고.
+- 상시 운영을 위한 보안·운영 설정: 미완료. Render 단기 시연에 적용한 환경변수와 미적용 항목은 6-5 참고.
 
 **공개 배포 전 추가로 검토할 보안 항목 (구현하지 않음)**
 
@@ -621,8 +626,8 @@ MartPick(마트픽)
 | 수량·담기·장바구니 (Q3·Q11·Q12·Q16·Q18·Q19·Q21) | 수량 1~99, 초과 추가는 거부·안내. 담기 1회에 1개, 담은 뒤 상품 탐색 화면 유지. 비교 전 가격 미표시. 지역은 영구 저장하지 않고 미선택 시 안내 | 2-1, 2-2, 5 |
 | 가격 유무 표시 (Q17·Q30) | 상품 탐색 화면에는 상품별 가격·가격 유무를 표시하지 않고 일반 안내 문구만 표시 | 2-1, 7 |
 | 접근 제한 테스트 (Q6) | 별도 URL 없이 비회원→회원 장바구니, 회원 A→B 장바구니 접근 차단을 테스트 | 2-2 |
-| 회원·인증 (Q4·Q20·Q36) | 아이디 영문·숫자 4~20자(대소문자 구분), 비밀번호 8자 이상·72바이트 이하와 확인란, 실패 메시지 비구분. 로그인 후 복귀는 `continue` 허용 경로 화이트리스트. 병합 없음. 로그인 상태의 POST 차단. 회원 장바구니는 회원 행 비관적 락과 얇은 `CartService` 분기. 로그인 시도 제한은 미구현 | 2-2, 2-4 |
-| 수집·재수집 (Q5·Q22·Q26~Q28·Q31~Q34) | API 실패와 빈 응답 구분. 전체 응답 검증 후 단일 트랜잭션 저장, 실패 시 DB 변경 없음. 네트워크·5xx만 제한적 재시도(HTTP 429 제외). 가격 0건 상품은 정상. G1·G2 급감 장치(80% 임시 기준)와 `collection_run` 이력. 사라진 판매점·상품은 삭제하지 않음. 정기 수집 제외, 동시 실행은 운영 전제로 처리, V7은 미확정 | 4-1-1, 4-3 |
+| 회원·인증 (Q4·Q20·Q36) | 가입 규칙(아이디 4~20자 대소문자 구분, 비밀번호 8자 이상·72바이트 이하)과 비밀번호 확인란, 로그인 실패 메시지 비구분. 로그인 후 복귀는 `continue` 허용 경로 화이트리스트, 비회원 장바구니 병합 없음, 로그인 상태의 POST 차단. 동시 담기는 회원 행 비관적 락, 장바구니 분기는 얇은 `CartService`. 로그인 시도 제한은 미구현 | 2-2, 2-4 |
+| 수집·재수집 (Q5·Q22·Q26~Q28·Q31~Q34) | API 실패와 빈 응답 구분, 전체 응답 검증 후 단일 트랜잭션 저장(실패 시 DB 무변경), 네트워크·5xx만 제한적 재시도, 가격 0건 상품은 정상, G1·G2 급감 장치(80% 임시 기준)와 `collection_run` 이력. 정기 수집 제외, 동시 실행은 운영 전제, V7은 미확정 | 4-1-1, 4-3 |
 | 화면 정책 (Q15·Q35) | 핵심 3화면 흐름과 완전·부분 비교 구분. 그린 UI, 상세 가격표 기본 접힘, 부분 비교 금액의 시각적 구분. 상품 사진·판매점 로고·순위·최저가 배지 미표시 | 2-0, 2-3, 2-5 |
 | 사용자 흐름 개선 (Q37) | 비회원 장바구니 안내, 가입을 거친 `continue` 유지, 결과 화면에서 지역 변경, 완전·부분 비교 각각 처음 10곳만 펼침 | 2-2, 2-3, 2-4 |
 | 가격 데이터 부재 안내 (Q38) | 전국 부재와 선택 지역 부재를 구분해 안내하고 총액·판정·정렬은 바꾸지 않음. 상품을 자동으로 제외하거나 삭제하지 않음 | 2-2, 2-3 |
