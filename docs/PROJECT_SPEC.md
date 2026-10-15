@@ -1,6 +1,6 @@
 # MartPick(마트픽) 서비스 명세
 
-> 문서 상태: **주요 기능 구현 완료. Render 무료 플랜에 단기 시연용으로 배포해 동작을 확인했으며, 시연 후 서비스와 DB를 삭제하는 것을 전제로 합니다.** · 2026-10-15 정리
+> 문서 상태: **주요 기능 구현 완료. Render 무료 플랜에 단기 시연용으로 배포해 동작을 확인했으며, 시연 뒤 웹 서비스와 PostgreSQL을 Suspend했습니다(삭제하지 않음, 현재 공개 데모 없음).** · 2026-10-15 정리, 배포 상태 2026-10-16 갱신
 >
 > - 이 문서는 현재 구현된 MartPick의 서비스 기획, 화면별 기능, 비즈니스 규칙, 예외 처리를 담습니다. 이 문서만으로 서비스 요구사항을 이해할 수 있도록 작성합니다.
 > - 규칙의 근거가 된 실제 API 응답 사실(필드, 건수, 오류 사례, 미검증 사항)은 [API_RESEARCH.md](API_RESEARCH.md)에 있습니다.
@@ -571,7 +571,7 @@ MartPick(마트픽)
 
 저장소(`application.yml`)에 **설정하지 않은 것**: HTTPS와 프록시 뒤 forward-headers, 세션 쿠키 `Secure`·`SameSite`, 세션 만료 명시(서버 기본값), 로그인 시도 제한, CSP 등 추가 보안 헤더, 로컬 기본 비밀번호 폴백(`martpick`) 제거. Render 배포에서는 이 중 forward-headers, 쿠키 `Secure`·`SameSite`, 세션 만료, DB 접속 정보를 환경변수로 지정했습니다. **로그인 시도 제한과 CSP는 적용하지 않았습니다.**
 
-- 배포 방식: Render 무료 플랜의 Docker 웹 서비스(Singapore)와 무료 PostgreSQL 16을 단기 시연용으로 썼습니다. 시연 후 서비스와 DB를 삭제하는 것을 전제로 하며 배포 주소는 문서에 적지 않습니다. 멀티스테이지 `Dockerfile`(Java 17, `bootJar -x test`)과 `.dockerignore`를 쓰고, 비루트 사용자로 실행하며, `PORT`(없으면 8080)와 DB 접속 정보는 환경변수로 받습니다. 이미지에 DB 비밀번호와 API 키는 들어 있지 않습니다.
+- 배포 방식: Render 무료 플랜의 Docker 웹 서비스(Singapore)와 무료 PostgreSQL 16을 단기 시연용으로 썼습니다. 시연 뒤 웹 서비스와 PostgreSQL을 모두 Suspend했고 삭제하지 않았습니다(웹 서비스는 HTTP 503과 `x-render-routing: suspend-by-user`로 확인했고, PostgreSQL은 사용자 보고에 근거함). 현재 공개 데모는 이용할 수 없으며 Resume하면 다시 공개될 수 있습니다. 배포 주소는 문서에 적지 않습니다. 멀티스테이지 `Dockerfile`(Java 17, `bootJar -x test`)과 `.dockerignore`를 쓰고, 비루트 사용자로 실행하며, `PORT`(없으면 8080)와 DB 접속 정보는 환경변수로 받습니다. 이미지에 DB 비밀번호와 API 키는 들어 있지 않습니다.
 - 로컬 Docker 확인(개발 DB `martpick`에 연결): 이미지 빌드 성공(약 1분 38초, 약 167MB), Flyway 적용 완료 상태로 인식(변경 없음), 주요 화면 정상 응답, 기동 로그에 민감정보 없음, 재시작 후 정상 기동(세션 장바구니는 소멸). 실행 전후로 개발 DB의 건수·시퀀스·변경 통계가 같았습니다.
 - Render에 등록한 환경변수(사용자 보고): `MARTPICK_DB_HOST`(Internal Hostname)·`MARTPICK_DB_PORT`·`MARTPICK_DB_NAME`·`MARTPICK_DB_USER`·`MARTPICK_DB_PASSWORD`, `SERVER_FORWARD_HEADERS_STRATEGY=native`, `SERVER_SERVLET_SESSION_COOKIE_SECURE=true`, `SERVER_SERVLET_SESSION_COOKIE_SAME_SITE=lax`, `SERVER_SERVLET_SESSION_TIMEOUT=30m`. 수집기를 켜는 `MARTPICK_COLLECT_RUN`과 `DATA_GO_KR_SERVICE_KEY`는 등록하지 않았습니다. DB 연결, `https` 리다이렉트, 쿠키 속성은 배포된 서비스의 동작으로 확인했고, 세션 만료 값은 등록했다는 사용자 보고에 근거하며 동작은 확인하지 않았습니다.
 - 첫 배포 실패: Docker 빌드의 `./gradlew --no-daemon --version`에서 종료 코드 126(실행 권한 없음)으로 실패했습니다. `gradlew`의 Git 파일 모드가 100644였고 로컬 Docker Desktop은 실행 권한을 붙여 주어 로컬에서는 드러나지 않았습니다. `RUN chmod +x gradlew`를 추가한 두 번째 배포가 성공(Live)했습니다.
@@ -579,7 +579,8 @@ MartPick(마트픽)
 - 배포된 서비스에서 확인한 것(읽기 전용 요청): `GET /`가 `https://…/products`로 리다이렉트, `/products` 200(상품 카드 30개), 검색(`햇반`, `우유 1L`, `서울우유흰우유`)과 제어 문자 검색어 400, 세션 쿠키 `Secure; HttpOnly; SameSite=Lax`, 응답 헤더 `X-Frame-Options: DENY`·`X-Content-Type-Options: nosniff`·`Cache-Control: no-store`, CSRF 토큰 없는 POST(`/login`, `/cart/items`) 403, 담기 302, `/cart` 200, `/compare` 서울 200(판매점 카드와 금액이 로컬 Docker 결과와 같음)과 지역 없이 호출하면 302, `/login`·`/signup` 200, `/admin`·`/error`·`/actuator/health`·`GET /logout` 404. 이어지는 `/products` 요청은 약 0.35~0.65초, 비교 첫 요청은 약 5.5초였습니다.
 - 사용자가 직접 확인한 것(사용자 보고, AI가 독립적으로 관찰한 것은 아님): 회원가입, 로그인, 로그인 전에 보던 화면으로의 복귀, 장바구니 담기와 장바구니 화면, 서울 지역 가격 비교, 로그아웃 후 상태, 재로그인 후 회원 장바구니 유지.
 - 로컬 부하 시험(Render 수치가 아님): CPU 0.1·메모리 512MB로 제한한 로컬 컨테이너에서 기동에 약 137~162초가 걸렸고(메모리 약 259MiB), 같은 환경에서 존재하지 않는 계정의 로그인 실패 1회가 0.57~2.8초였습니다. 로그인·회원가입은 이 로컬 컨테이너에서는 개발 DB에 쓰기가 생겨 실행하지 않았습니다.
-- 확인하지 못한 것: Render 서비스 로그(기동 시간, 민감정보 노출 여부), 절전 후 첫 요청의 지연 시간, Render 무료 플랜의 실제 CPU와 포트 감지 대기 시간, Render DB의 외부 접근 허용 IP 규칙을 닫았는지. 서비스가 Render 대시보드에서 Live 상태임은 사용자가 보고했습니다.
+- 백업과 재시연: 복원에 쓴 덤프(`member`·`cart_item` 데이터 제외)와 복원 스크립트를 저장소 밖 로컬에 별도로 보관했습니다. PostgreSQL 16 임시 컨테이너에 복원해 product 604, store 630, price 113,843, region 18, flyway_schema_history 2, collection_run 1과 시퀀스가 같음을 확인했고, 덤프에 회원 데이터·비밀번호 해시·API 키·접속 정보가 없음을 점검했습니다. 무료 PostgreSQL은 생성 30일 후 만료되며(Render 문서) Suspend가 이를 늦추는지는 확인하지 못했으므로 영구 보관을 전제로 하지 않습니다. 재시연하려면 DB와 웹 서비스를 Resume하면 되고, DB가 만료·삭제되었으면 새 DB를 만들어 백업을 복원한 뒤 웹 서비스의 DB 환경변수를 새 값으로 바꿔야 합니다. 백업이 없으면 개발 DB에서 다시 덤프하거나 공공데이터를 재수집할 수 있습니다(4장).
+- 확인하지 못한 것: Render 서비스 로그(기동 시간, 민감정보 노출 여부), 절전 후 첫 요청의 지연 시간, Render 무료 플랜의 실제 CPU와 포트 감지 대기 시간, Render DB의 외부 접근 허용 IP 규칙을 닫았는지, PostgreSQL의 Suspend 상태(사용자 보고이며 외부에서는 5432 포트 TCP 연결이 수락되어 확인하지 못함). 배포 직후 서비스가 Render 대시보드에서 Live 상태였음은 사용자가 보고했습니다.
 - 운영에서는 공공데이터 수집기를 실행하지 않습니다(`martpick.collect.run=false`). 개발 DB의 상품·가격 데이터를 옮겼고 회원·장바구니 데이터는 옮기지 않았습니다. 비회원 장바구니는 서버 세션에 저장되므로 재시작하면 사라지고 로그인 상태도 풀리며, 회원 장바구니는 DB에 저장됩니다.
 
 ---
